@@ -34,3 +34,21 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
+# Debug environment variables on startup
+if "DATABASE_URL" in os.environ:
+    url = os.environ["DATABASE_URL"]
+    try:
+        if "@" in url:
+            left, right = url.split("@", 1)
+            if ":" in left:
+                scheme_user, _ = left.rsplit(":", 1)
+                print(f"DEBUG_ENV: DATABASE_URL = {scheme_user}:***@{right}")
+            else:
+                print(f"DEBUG_ENV: DATABASE_URL = {left}:***")
+        else:
+            print(f"DEBUG_ENV: DATABASE_URL length is {len(url)}")
+    except Exception as e:
+        print(f"DEBUG_ENV: Failed to parse DATABASE_URL: {e}")
+else:
+    print("DEBUG_ENV: DATABASE_URL not in os.environ")
