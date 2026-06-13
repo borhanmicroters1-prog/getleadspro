@@ -320,10 +320,19 @@ async def upload_csv_leads(
     file: UploadFile = File(...),
     campaign_id: Optional[str] = None,
     campaign_name: Optional[str] = None,
+    project_name: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     campaign = None
+    target_project_name = None
+    
+    # Resolve project name
+    if project_name and project_name.strip() and project_name != "null" and project_name != "undefined":
+        target_project_name = project_name.strip()
+    elif campaign_name and campaign_name.strip() and campaign_name != "null" and campaign_name != "undefined":
+        target_project_name = campaign_name.strip()
+
     if campaign_id and campaign_id != "null" and campaign_id != "undefined" and campaign_id.strip():
         camp_res = await db.execute(
             select(Campaign).where(
@@ -336,26 +345,7 @@ async def upload_csv_leads(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Selected campaign not found."
             )
-    elif campaign_name and campaign_name != "null" and campaign_name != "undefined" and campaign_name.strip():
-        camp_name_clean = campaign_name.strip()
-        camp_res = await db.execute(
-            select(Campaign).where(
-                and_(
-                    Campaign.user_id == current_user["id"],
-                    func.lower(Campaign.name) == func.lower(camp_name_clean)
-                )
-            )
-        )
-        campaign = camp_res.scalars().first()
-        if not campaign:
-            # Create a new draft campaign with this name
-            campaign = Campaign(
-                user_id=current_user["id"],
-                name=camp_name_clean,
-                status="draft"
-            )
-            db.add(campaign)
-            await db.flush() # Populate campaign.id
+        target_project_name = campaign.name
 
     # Read file content
     contents = await file.read()
@@ -413,14 +403,13 @@ async def upload_csv_leads(
             
         parsed += 1
         
-        # Check database for duplicates per user and campaign
-        target_campaign_name = campaign.name if campaign else None
+        # Check database for duplicates per user and project
         dup_res = await db.execute(
             select(Lead).where(
                 and_(
                     Lead.user_id == current_user["id"], 
                     Lead.email == email,
-                    Lead.campaign_name == target_campaign_name
+                    Lead.campaign_name == target_project_name
                 )
             )
         )
@@ -481,7 +470,7 @@ async def upload_csv_leads(
             website=row[website_key].strip() if (website_key and row[website_key]) else "",
             title=row[title_key].strip() if (title_key and row[title_key]) else None,
             source="csv_upload",
-            campaign_name=campaign.name if campaign else None,
+            campaign_name=target_project_name,
             status="new"
         )
         db.add(db_lead)
@@ -515,6 +504,18 @@ async def upload_csv_leads(
         "inserted_leads": inserted,
         "skipped_rows": skipped
     }
+
+@router.get("/projects")
+async def get_unique_projects(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Lead.campaign_name).where(
+        and_(Lead.user_id == current_user["id"], Lead.campaign_name != None)
+    ).distinct()
+    res = await db.execute(stmt)
+    projects = [p for p in res.scalars().all() if p and p.strip()]
+    return sorted(projects)
 
 @router.get("/")
 async def list_leads(

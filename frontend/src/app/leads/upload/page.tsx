@@ -26,8 +26,9 @@ function CsvUploadContent() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
   const [stats, setStats] = useState<UploadStats | null>(null);
+  const [projects, setProjects] = useState<string[]>([]);
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
-  const [campaignName, setCampaignName] = useState("");
+  const [projectName, setProjectName] = useState("");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -39,10 +40,15 @@ function CsvUploadContent() {
       setUser(currentUser);
       setLoading(false);
       
-      // Fetch user campaigns
+      // Fetch user campaigns (for query param resolution)
       api.get("/api/campaigns")
         .then((data) => setCampaigns(data || []))
         .catch((err) => console.error("Error fetching campaigns:", err));
+
+      // Fetch user projects
+      api.get("/api/leads/projects")
+        .then((data) => setProjects(data || []))
+        .catch((err) => console.error("Error fetching projects:", err));
     }
   }, [router]);
 
@@ -50,7 +56,7 @@ function CsvUploadContent() {
     if (campaignQueryId && campaigns.length > 0) {
       const camp = campaigns.find((c) => c.id === campaignQueryId);
       if (camp) {
-        setCampaignName(camp.name);
+        setProjectName(camp.name);
       }
     }
   }, [campaignQueryId, campaigns]);
@@ -112,8 +118,8 @@ function CsvUploadContent() {
 
     try {
       const queryParams = new URLSearchParams();
-      if (campaignName.trim()) {
-        queryParams.append("campaign_name", campaignName.trim());
+      if (projectName.trim()) {
+        queryParams.append("project_name", projectName.trim());
       }
       const queryString = queryParams.toString();
       const url = queryString ? `/api/leads/upload?${queryString}` : `/api/leads/upload`;
@@ -126,7 +132,12 @@ function CsvUploadContent() {
         skipped_rows: result.skipped_rows,
       });
       setFile(null); // Clear selected file after success
-      setCampaignName(""); // Clear selected campaign
+      setProjectName(""); // Clear project input
+      
+      // Refresh user projects
+      api.get("/api/leads/projects")
+        .then((data) => setProjects(data || []))
+        .catch((err) => console.error("Error fetching projects:", err));
     } catch (err: any) {
       setError(err.message || "Failed to upload file.");
     } finally {
@@ -206,20 +217,19 @@ function CsvUploadContent() {
                   </div>
                 )}
 
-                {/* Campaign Selector Dropdown */}
-                {/* Campaign Name Input */}
+                {/* Project Name Input */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  <label htmlFor="campaign-name-input" style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
-                    Campaign Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
+                  <label htmlFor="project-name-input" style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
+                    Project Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
                   </label>
                   <div style={{ position: "relative" }}>
                     <input 
-                      id="campaign-name-input"
+                      id="project-name-input"
                       type="text"
-                      list="campaign-suggestions"
-                      value={campaignName}
-                      onChange={(e) => setCampaignName(e.target.value)}
-                      placeholder="Enter a new campaign name, or select an existing one..."
+                      list="project-suggestions"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      placeholder="Enter a project name (e.g. Real Estate, Doctors)..."
                       className="input-field"
                       style={{ 
                         width: "100%", 
@@ -237,30 +247,25 @@ function CsvUploadContent() {
                       fontSize: "1rem", 
                       opacity: 0.7 
                     }}>
-                      🎯
+                      📁
                     </span>
                   </div>
-                  <datalist id="campaign-suggestions">
-                    {campaigns.map((camp) => (
-                      <option key={camp.id} value={camp.name} />
+                  <datalist id="project-suggestions">
+                    {projects.map((proj) => (
+                      <option key={proj} value={proj} />
                     ))}
                   </datalist>
 
-                  {campaignName.trim() && (
+                  {projectName.trim() && (
                     <div style={campaignBadgeStyle}>
-                      🎯 {campaigns.some(c => c.name.toLowerCase() === campaignName.trim().toLowerCase()) 
-                        ? `Adding leads to the existing campaign: ` 
-                        : `A new draft campaign will be created: `}
-                      <strong style={{ color: "hsl(var(--accent-cyan))", marginLeft: "4px" }}>
-                        {campaignName.trim()}
-                      </strong>
+                      📁 Grouping leads under project: <strong style={{ color: "hsl(var(--accent-cyan))", marginLeft: "4px" }}>{projectName.trim()}</strong>
                     </div>
                   )}
 
                   <small style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "2px" }}>
-                    {campaignName.trim() 
-                      ? "Uploaded leads will be added directly into this campaign's sequence as pending."
-                      : "Uploaded leads will be added to your general Leads list. You can assign them to a campaign later."}
+                    {projectName.trim() 
+                      ? "Uploaded leads will be tagged with this project name. You can filter by this project when setting up outreach campaigns."
+                      : "Uploaded leads will be added to your general Leads list. You can assign them to a project or campaign later."}
                   </small>
                 </div>
 

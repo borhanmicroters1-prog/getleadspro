@@ -40,6 +40,9 @@ export default function NewCampaignPage() {
   // Available options
   const [mailboxes, setMailboxes] = useState<MailboxItem[]>([]);
   const [availableLeads, setAvailableLeads] = useState<LeadItem[]>([]);
+  const [projects, setProjects] = useState<string[]>([]);
+  const [selectedProject, setSelectedProject] = useState("");
+  const [loadingLeads, setLoadingLeads] = useState(false);
 
   // Wizard State
   // Step 1: Setup
@@ -94,7 +97,7 @@ export default function NewCampaignPage() {
 
   useEffect(() => {
     if (user) {
-      // Fetch connected mailboxes & leads
+      // Fetch connected mailboxes, projects & leads
       const loadOptions = async () => {
         try {
           const mData = await api.get("/api/email-accounts");
@@ -102,6 +105,9 @@ export default function NewCampaignPage() {
           if (mData && mData.length > 0) {
             setSelectedMailboxId(mData[0].id);
           }
+
+          const pData = await api.get("/api/leads/projects");
+          setProjects(pData || []);
 
           const lData = await api.get("/api/leads", { limit: 100 });
           setAvailableLeads(lData.leads || []);
@@ -112,6 +118,26 @@ export default function NewCampaignPage() {
       loadOptions();
     }
   }, [user]);
+
+  const handleProjectChange = async (projectVal: string) => {
+    setSelectedProject(projectVal);
+    setLoadingLeads(true);
+    try {
+      const params: any = { limit: 1000 };
+      if (projectVal) {
+        params.campaign = projectVal; // Backend expects 'campaign' query parameter for project/campaign name filtering
+      }
+      const lData = await api.get("/api/leads", params);
+      const leadsList = lData.leads || [];
+      setAvailableLeads(leadsList);
+      // Auto-select all project leads by default
+      setSelectedLeadIds(leadsList.map((l: any) => l.id));
+    } catch (err) {
+      console.error("Failed to load project leads:", err);
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
 
   const toggleLeadSelection = (id: string) => {
     setSelectedLeadIds(prev => 
@@ -370,15 +396,39 @@ export default function NewCampaignPage() {
               </div>
 
               {/* Leads Selection Panel */}
-              <div style={{ marginTop: "2rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                  <label style={{ ...labelStyle, fontSize: "0.95rem" }}>Select Target Leads ({selectedLeadIds.length} selected)</label>
+              <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                  <label style={labelStyle}>Select Project Leads</label>
+                  <select 
+                    value={selectedProject}
+                    onChange={(e) => handleProjectChange(e.target.value)}
+                    className="input-field"
+                    style={{ cursor: "pointer", width: "100%", maxWidth: "400px" }}
+                  >
+                    <option value="">-- All Leads (No Project Filter) --</option>
+                    {projects.map(proj => (
+                      <option key={proj} value={proj}>
+                        📁 {proj}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
+                  <label style={{ ...labelStyle, fontSize: "0.95rem", marginBottom: 0 }}>
+                    Select Target Leads ({selectedLeadIds.length} selected)
+                  </label>
                   <button onClick={handleSelectAllLeads} className="btn btn-secondary" style={{ padding: "0.4rem 0.8rem", fontSize: "0.75rem" }}>
                     {selectedLeadIds.length === availableLeads.length ? "Deselect All" : "Select All Available"}
                   </button>
                 </div>
                 
-                {availableLeads.length > 0 ? (
+                {loadingLeads ? (
+                  <div style={{ padding: "3rem", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
+                    <div style={spinnerStyle} />
+                    <span style={{ color: "hsl(var(--text-secondary))", fontSize: "0.9rem" }}>Loading project leads...</span>
+                  </div>
+                ) : availableLeads.length > 0 ? (
                   <div style={leadsSelectionContainerStyle} className="input-field">
                     {availableLeads.map(l => (
                       <div key={l.id} style={leadSelectorRowStyle} className="lead-selector-row" onClick={() => toggleLeadSelection(l.id)}>

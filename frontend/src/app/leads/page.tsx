@@ -363,8 +363,8 @@ export default function LeadsPage() {
                               {l.source.replace("_", " ")}
                             </span>
                             {l.campaign_name && (
-                              <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))", display: "inline-flex", alignItems: "center", gap: "0.25rem" }} title={`Campaign: ${l.campaign_name}`}>
-                                🎯 {l.campaign_name}
+                              <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))", display: "inline-flex", alignItems: "center", gap: "0.25rem" }} title={`Project: ${l.campaign_name}`}>
+                                📁 {l.campaign_name}
                               </span>
                             )}
                           </div>
