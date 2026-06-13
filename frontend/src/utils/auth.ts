@@ -37,7 +37,8 @@ if (typeof window !== "undefined" && supabase) {
       
       // Fetch latest profile settings from backend database
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/me`, {
+        const apiBase = window.location.hostname !== "localhost" ? "/api/proxy" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+        const res = await fetch(`${apiBase}/api/auth/me`, {
           headers: {
             "Authorization": `Bearer ${session.access_token}`
           }

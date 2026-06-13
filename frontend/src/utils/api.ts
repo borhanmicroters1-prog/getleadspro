@@ -1,6 +1,9 @@
 import { auth } from "./auth";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// In production, use same-origin proxy to avoid CORS issues.
+// In development, call backend directly.
+const IS_PRODUCTION = typeof window !== "undefined" && window.location.hostname !== "localhost";
+const BASE_URL = IS_PRODUCTION ? "/api/proxy" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 
 interface RequestOptions {
   method?: string;
