@@ -1,0 +1,910 @@
+import datetime
+import logging
+import random
+from zoneinfo import ZoneInfo
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy.future import select
+from sqlalchemy import and_, func
+
+from app.database import async_session_maker
+from app.models import Campaign, CampaignLead, Lead, EmailAccount, User, Blacklist, WarmupLog
+import asyncio
+from app.utils.email_sender import send_email
+from app.utils.telegram import send_telegram_notification
+from app.utils.imap_worker import process_incoming_warmups
+
+logger = logging.getLogger("scheduler")
+scheduler = AsyncIOScheduler()
+
+def substitute_variables(text: str, lead: Lead) -> str:
+    """Substitutes variables like {{name}} or {{company}} in email templates."""
+    if not text:
+        return ""
+    text = text.replace("{{name}}", lead.name or "Prospect")
+    text = text.replace("{{company}}", lead.company or "your business")
+    text = text.replace("{{website}}", lead.website or "your website")
+    
+    # Additional placeholders
+    first_name = lead.name.split()[0] if (lead.name and lead.name.strip()) else "Prospect"
+    text = text.replace("{{first_name}}", first_name)
+    text = text.replace("{{title}}", lead.title or "")
+    
+    return text
+
+async def send_emails_job():
+    """Periodic job to send outbound emails for active campaigns within business hours."""
+    logger.info("Running send_emails_job...")
+    async with async_session_maker() as db:
+        # 1. Fetch active campaigns
+        q = await db.execute(
+            select(Campaign).where(Campaign.status == "active")
+        )
+        active_campaigns = q.scalars().all()
+        
+        for campaign in active_campaigns:
+            # 2. Check Timezone sending window
+            try:
+                tz = ZoneInfo(campaign.timezone)
+                now_tz = datetime.datetime.now(tz)
+                current_hour = now_tz.hour
+                if not (campaign.send_start_hour <= current_hour < campaign.send_end_hour):
+                    # Outside sending business hour window
+                    continue
+            except Exception as e:
+                logger.error(f"Timezone error for campaign {campaign.id}: {str(e)}")
+                continue
+
+            # 3. Resolve Mailbox (with Rotation)
+            mailbox = None
+            if campaign.email_account_id:
+                q_mailbox = await db.execute(
+                    select(EmailAccount).where(EmailAccount.id == campaign.email_account_id)
+                )
+                mailbox = q_mailbox.scalars().first()
+
+            if (not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit) and campaign.rotate_mailboxes:
+                # Find another active mailbox for the user that has not hit its limit
+                q_rot = await db.execute(
+                    select(EmailAccount).where(
+                        and_(
+                            EmailAccount.user_id == campaign.user_id,
+                            EmailAccount.is_active == True,
+                            EmailAccount.emails_sent_today < EmailAccount.daily_limit
+                        )
+                    ).order_by(EmailAccount.created_at.asc())
+                )
+                rotated = q_rot.scalars().first()
+                if rotated:
+                    logger.info(f"Rotating campaign {campaign.id} ({campaign.name}) to mailbox {rotated.from_email}")
+                    mailbox = rotated
+
+            if not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit:
+                logger.warning(f"No available active mailbox with capacity for campaign {campaign.name} ({campaign.id}).")
+                continue
+
+            # Check Send Interval (elapsed minutes since last email sent)
+            q_last_sent = await db.execute(
+                select(func.max(CampaignLead.last_sent_at))
+                .where(CampaignLead.campaign_id == campaign.id)
+            )
+            last_sent = q_last_sent.scalar()
+            if last_sent:
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                if last_sent.tzinfo is None:
+                    last_sent = last_sent.replace(tzinfo=datetime.timezone.utc)
+                elapsed_minutes = (now_utc - last_sent).total_seconds() / 60.0
+                if elapsed_minutes < campaign.send_interval:
+                    logger.info(f"Skipping campaign {campaign.name} ({campaign.id}): elapsed {elapsed_minutes:.1f}m < interval {campaign.send_interval}m.")
+                    continue
+
+            # 4. Fetch pending campaign leads ordered by priority score desc
+            q_leads = await db.execute(
+                select(CampaignLead, Lead)
+                .join(Lead, CampaignLead.lead_id == Lead.id)
+                .where(
+                    and_(
+                        CampaignLead.campaign_id == campaign.id,
+                        CampaignLead.status == "pending"
+                    )
+                )
+                .order_by(Lead.score.desc())
+                .limit(1) # Send one email at a time per interval
+            )
+            
+            for c_lead, lead in q_leads.all():
+                # Verify limit again during batch execution, and rotate if possible
+                if mailbox.emails_sent_today >= mailbox.daily_limit:
+                    if campaign.rotate_mailboxes:
+                        q_rot = await db.execute(
+                            select(EmailAccount).where(
+                                and_(
+                                    EmailAccount.user_id == campaign.user_id,
+                                    EmailAccount.is_active == True,
+                                    EmailAccount.emails_sent_today < EmailAccount.daily_limit
+                                )
+                            ).order_by(EmailAccount.created_at.asc())
+                        )
+                        rotated = q_rot.scalars().first()
+                        if rotated:
+                            logger.info(f"Rotating campaign {campaign.id} within batch to mailbox {rotated.from_email}")
+                            mailbox = rotated
+                        else:
+                            break
+                    else:
+                        break
+
+                # 5. Blacklist check
+                q_blacklist = await db.execute(
+                    select(Blacklist).where(
+                        and_(
+                            Blacklist.user_id == campaign.user_id,
+                            Blacklist.value == lead.email.lower()
+                        )
+                    )
+                )
+                if q_blacklist.scalars().first():
+                    # Lead email is blacklisted
+                    c_lead.status = "unsubscribed"
+                    lead.status = "unsubscribed"
+                    await db.commit()
+                    continue
+
+                # Parse domain for blacklist check
+                domain = lead.email.split("@")[-1].lower() if "@" in lead.email else ""
+                if domain:
+                    q_blacklist_domain = await db.execute(
+                        select(Blacklist).where(
+                            and_(
+                                Blacklist.user_id == campaign.user_id,
+                                Blacklist.value == domain
+                            )
+                        )
+                    )
+                    if q_blacklist_domain.scalars().first():
+                        # Domain is blacklisted
+                        c_lead.status = "unsubscribed"
+                        lead.status = "unsubscribed"
+                        await db.commit()
+                        continue
+
+                # 6. Compose email details
+                subject = campaign.subject_a
+                if campaign.subject_b and c_lead.assigned_subject == "b":
+                    subject = campaign.subject_b
+
+                subject_subbed = substitute_variables(subject, lead)
+                body_subbed = substitute_variables(campaign.body_template, lead)
+
+                # 7. Deliver email
+                success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db)
+                
+                if success:
+                    c_lead.status = "sent"
+                    c_lead.sent_count = 1
+                    c_lead.last_sent_at = datetime.datetime.now(datetime.timezone.utc)
+                    lead.status = "contacted"
+                    mailbox.emails_sent_today += 1
+                    
+                    # Schedule follow-up if follow_up_1 is set
+                    if campaign.follow_up_1_days:
+                        c_lead.next_follow_up_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=campaign.follow_up_1_days)
+                    else:
+                        c_lead.next_follow_up_at = None
+
+                    await db.commit()
+                else:
+                    logger.error(f"Failed to send email to lead {lead.email}")
+
+async def check_follow_ups_job():
+    """Checks for leads waiting for follow-up emails and sends them automatically."""
+    logger.info("Running check_follow_ups_job...")
+    async with async_session_maker() as db:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        
+        # 1. Fetch leads whose follow-up is due
+        q_leads = await db.execute(
+            select(CampaignLead, Lead, Campaign)
+            .join(Lead, CampaignLead.lead_id == Lead.id)
+            .join(Campaign, CampaignLead.campaign_id == Campaign.id)
+            .where(
+                and_(
+                    Campaign.status == "active",
+                    CampaignLead.status == "sent",
+                    CampaignLead.next_follow_up_at <= now
+                )
+            )
+            .limit(5)
+        )
+
+        for c_lead, lead, campaign in q_leads.all():
+            # Resolve mailbox with rotation support
+            mailbox = None
+            if campaign.email_account_id:
+                q_mailbox = await db.execute(
+                    select(EmailAccount).where(EmailAccount.id == campaign.email_account_id)
+                )
+                mailbox = q_mailbox.scalars().first()
+
+            if (not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit) and campaign.rotate_mailboxes:
+                # Find another active mailbox for the user that has not hit its limit
+                q_rot = await db.execute(
+                    select(EmailAccount).where(
+                        and_(
+                            EmailAccount.user_id == campaign.user_id,
+                            EmailAccount.is_active == True,
+                            EmailAccount.emails_sent_today < EmailAccount.daily_limit
+                        )
+                    ).order_by(EmailAccount.created_at.asc())
+                )
+                rotated = q_rot.scalars().first()
+                if rotated:
+                    logger.info(f"Rotating follow-up sending to mailbox {rotated.from_email} for campaign {campaign.name}")
+                    mailbox = rotated
+
+            if not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit:
+                logger.warning(f"No available active mailbox with capacity for follow-up on lead {lead.email} in campaign {campaign.name}.")
+                continue
+
+            # Blacklist check
+            q_blacklist = await db.execute(
+                select(Blacklist).where(
+                    and_(
+                        Blacklist.user_id == campaign.user_id,
+                        Blacklist.value == lead.email.lower()
+                    )
+                )
+            )
+            if q_blacklist.scalars().first():
+                c_lead.status = "unsubscribed"
+                lead.status = "unsubscribed"
+                await db.commit()
+                continue
+
+            # Determine follow-up body & next step
+            follow_up_body = None
+            next_follow_up_days = None
+            step_number = c_lead.sent_count + 1
+
+            if step_number == 2 and campaign.follow_up_1_body:
+                follow_up_body = campaign.follow_up_1_body
+                next_follow_up_days = campaign.follow_up_2_days
+            elif step_number == 3 and campaign.follow_up_2_body:
+                follow_up_body = campaign.follow_up_2_body
+                next_follow_up_days = campaign.follow_up_3_days
+            elif step_number == 4 and campaign.follow_up_3_body:
+                follow_up_body = campaign.follow_up_3_body
+                next_follow_up_days = None
+
+            if not follow_up_body:
+                # No more follow-up templates configured for this step
+                c_lead.next_follow_up_at = None
+                await db.commit()
+                continue
+
+            # Compose follow-up (using "Re: " prefix on original subject)
+            orig_subject = campaign.subject_a
+            if campaign.subject_b and c_lead.assigned_subject == "b":
+                orig_subject = campaign.subject_b
+
+            subject = f"Re: {orig_subject}"
+            subject_subbed = substitute_variables(subject, lead)
+            body_subbed = substitute_variables(follow_up_body, lead)
+
+            # Send follow-up
+            success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db)
+            
+            if success:
+                c_lead.sent_count = step_number
+                c_lead.last_sent_at = datetime.datetime.now(datetime.timezone.utc)
+                mailbox.emails_sent_today += 1
+
+                if next_follow_up_days:
+                    c_lead.next_follow_up_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=next_follow_up_days)
+                else:
+                    c_lead.next_follow_up_at = None
+
+                await db.commit()
+            else:
+                logger.error(f"Failed to send follow-up to lead {lead.email}")
+
+async def check_replies_and_bounces_job():
+    """
+    Checks mailboxes for replies and bounces.
+    In development mock mode, this simulates incoming replies/bounces
+    on active sent outreaches to allow testing statistics and notifications.
+    """
+    logger.info("Running check_replies_and_bounces_job...")
+    async with async_session_maker() as db:
+        # Fetch campaign leads that have status "sent" in active campaigns
+        q_leads = await db.execute(
+            select(CampaignLead, Lead, Campaign)
+            .join(Lead, CampaignLead.lead_id == Lead.id)
+            .join(Campaign, CampaignLead.campaign_id == Campaign.id)
+            .where(
+                and_(
+                    Campaign.status == "active",
+                    CampaignLead.status == "sent"
+                )
+            )
+        )
+        
+        for c_lead, lead, campaign in q_leads.all():
+            # Only simulate replies for emails sent at least 30 seconds ago
+            if not c_lead.last_sent_at:
+                continue
+            delta = datetime.datetime.now(datetime.timezone.utc) - c_lead.last_sent_at.replace(tzinfo=datetime.timezone.utc)
+            if delta.total_seconds() < 30:
+                continue
+
+            # Roll a dice: 10% chance of reply, 5% chance of bounce
+            dice = random.random()
+            
+            if dice < 0.10: # Reply received!
+                c_lead.status = "replied"
+                c_lead.next_follow_up_at = None
+                lead.status = "replied"
+                
+                await db.commit()
+                
+                # Fetch user details to get telegram bot config
+                q_user = await db.execute(
+                    select(User).where(User.id == campaign.user_id)
+                )
+                user = q_user.scalars().first()
+                
+                if user:
+                    message_text = (
+                        f"💬 <b>New Reply Received!</b>\n\n"
+                        f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
+                        f"Company: {lead.company or '-'}\n"
+                        f"Campaign: <b>{campaign.name}</b>\n\n"
+                        f"<i>\"Thanks for reaching out! I would love to connect and jump on a call next Wednesday.\"</i>"
+                    )
+                    await send_telegram_notification(user, message_text)
+                    
+            elif dice < 0.15: # Bounce received!
+                c_lead.status = "bounced"
+                c_lead.next_follow_up_at = None
+                lead.status = "bounced"
+                
+                await db.commit()
+
+                # Fetch user details
+                q_user = await db.execute(
+                    select(User).where(User.id == campaign.user_id)
+                )
+                user = q_user.scalars().first()
+                
+                if user:
+                    message_text = (
+                        f"❌ <b>Outreach Email Bounced!</b>\n\n"
+                        f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
+                        f"Campaign: <b>{campaign.name}</b>\n"
+                        f"Status: Undeliverable address."
+                    )
+                    await send_telegram_notification(user, message_text)
+                    
+                # Evaluate Campaign Bounce Safety Limits (Auto-pause if > 10% on active leads)
+                c_leads_q = await db.execute(
+                    select(CampaignLead.status, func.count(CampaignLead.id))
+                    .where(CampaignLead.campaign_id == campaign.id)
+                    .group_by(CampaignLead.status)
+                )
+                status_counts = dict(c_leads_q.all())
+                total = sum(status_counts.values())
+                sent = status_counts.get("sent", 0) + status_counts.get("opened", 0) + status_counts.get("replied", 0) + status_counts.get("bounced", 0)
+                bounced = status_counts.get("bounced", 0)
+                
+                bounce_rate = (bounced / sent) * 100 if sent > 0 else 0
+                if bounce_rate > 10.0:
+                    campaign.status = "paused"
+                    await db.commit()
+                    if user:
+                        pause_text = (
+                            f"⚠️ <b>Campaign Auto-Paused!</b>\n\n"
+                            f"Campaign: <b>{campaign.name}</b> has exceeded the 10% bounce safety threshold.\n"
+                            f"Current Bounce Rate: <b>{bounce_rate:.1f}%</b> ({bounced} bounces out of {sent} sent).\n"
+                            f"Action Required: Clean your email list and verify MX records before resuming."
+                        )
+                        await send_telegram_notification(user, pause_text)
+
+async def send_daily_reports_job():
+    """Calculates daily outreach stats and sends Telegram reports to active users."""
+    logger.info("Running send_daily_reports_job...")
+    async with async_session_maker() as db:
+        # Fetch users with active telegram setups
+        q_users = await db.execute(
+            select(User).where(and_(User.telegram_bot_token != None, User.telegram_chat_id != None))
+        )
+        users = q_users.scalars().all()
+        
+        for user in users:
+            # Fetch all campaigns of the user
+            q_campaigns = await db.execute(
+                select(Campaign).where(Campaign.user_id == user.id)
+            )
+            campaigns = q_campaigns.scalars().all()
+            if not campaigns:
+                continue
+                
+            report_text = f"📊 <b>Daily Outreach Summary — GetLeads</b>\nDate: {datetime.date.today().isoformat()}\n\n"
+            has_activity = False
+            
+            for camp in campaigns:
+                # Count today's deliveries
+                # To mock this or track this in sqlite, we can check how many campaign leads have status updates today.
+                # (For simplicity in dev simulation, we select counts of leads that are sent/replied/bounced).
+                q_counts = await db.execute(
+                    select(CampaignLead.status, func.count(CampaignLead.id))
+                    .where(CampaignLead.campaign_id == camp.id)
+                    .group_by(CampaignLead.status)
+                )
+                counts = dict(q_counts.all())
+                total = sum(counts.values())
+                sent = counts.get("sent", 0) + counts.get("opened", 0) + counts.get("replied", 0) + counts.get("bounced", 0)
+                opened = counts.get("opened", 0) + counts.get("replied", 0)
+                replied = counts.get("replied", 0)
+                bounced = counts.get("bounced", 0)
+                
+                if sent > 0:
+                    has_activity = True
+                    open_pct = (opened / sent) * 100
+                    reply_pct = (replied / sent) * 100
+                    
+                    report_text += (
+                        f"✉️ <b>{camp.name}</b> ({camp.status.upper()})\n"
+                        f"• Sent: {sent}\n"
+                        f"• Opened: {opened} ({open_pct:.1f}%)\n"
+                        f"• Replied: {replied} ({reply_pct:.1f}%)\n"
+                        f"• Bounced: {bounced}\n\n"
+                    )
+            
+            if has_activity:
+                await send_telegram_notification(user, report_text)
+            else:
+                logger.info(f"No outreach activity today for user {user.id}. Skipping report.")
+
+async def resolve_ab_winner_internal(campaign: Campaign, db) -> str:
+    """Helper method to resolve the winning subject line for a split test."""
+    # Count deliveries and opens/replies for subject A
+    q_a = await db.execute(
+        select(CampaignLead.status, func.count(CampaignLead.id))
+        .where(
+            and_(
+                CampaignLead.campaign_id == campaign.id,
+                CampaignLead.assigned_subject == "a"
+            )
+        )
+        .group_by(CampaignLead.status)
+    )
+    counts_a = dict(q_a.all())
+    sent_a = sum(counts_a.values()) - counts_a.get("pending", 0)
+    opened_a = counts_a.get("opened", 0) + counts_a.get("replied", 0)
+    rate_a = (opened_a / sent_a) * 100 if sent_a > 0 else 0.0
+
+    # Count deliveries and opens/replies for subject B
+    q_b = await db.execute(
+        select(CampaignLead.status, func.count(CampaignLead.id))
+        .where(
+            and_(
+                CampaignLead.campaign_id == campaign.id,
+                CampaignLead.assigned_subject == "b"
+            )
+        )
+        .group_by(CampaignLead.status)
+    )
+    counts_b = dict(q_b.all())
+    sent_b = sum(counts_b.values()) - counts_b.get("pending", 0)
+    opened_b = counts_b.get("opened", 0) + counts_b.get("replied", 0)
+    rate_b = (opened_b / sent_b) * 100 if sent_b > 0 else 0.0
+
+    # Pick winner
+    winner = "b" if rate_b > rate_a else "a"
+    campaign.ab_winner = winner
+    
+    # Update pending leads to use the winner subject
+    from sqlalchemy import update
+    await db.execute(
+        update(CampaignLead)
+        .where(
+            and_(
+                CampaignLead.campaign_id == campaign.id,
+                CampaignLead.status == "pending"
+            )
+        )
+        .values(assigned_subject=winner)
+    )
+    
+    await db.commit()
+    logger.info(f"Resolved A/B test winner for campaign {campaign.id} to subject {winner.upper()} (A: {rate_a:.1f}%, B: {rate_b:.1f}%)")
+    
+    # Send telegram notification if configured
+    q_user = await db.execute(
+        select(User).where(User.id == campaign.user_id)
+    )
+    user = q_user.scalars().first()
+    if user:
+        subject_text_winner = campaign.subject_a if winner == "a" else campaign.subject_b
+        message = (
+            f"🏆 <b>A/B Test Winner Selected!</b>\n\n"
+            f"Campaign: <b>{campaign.name}</b>\n"
+            f"Winner: <b>Subject {winner.upper()}</b> (\"{subject_text_winner}\")\n\n"
+            f"📈 <b>Stats:</b>\n"
+            f"• Subject A: {rate_a:.1f}% open rate ({opened_a}/{sent_a})\n"
+            f"• Subject B: {rate_b:.1f}% open rate ({opened_b}/{sent_b})\n\n"
+            f"All remaining pending leads will receive Subject {winner.upper()}."
+        )
+        await send_telegram_notification(user, message)
+        
+    return winner
+
+async def detect_ab_test_winners_job():
+    """
+    Checks active campaigns that are split testing (subject_b set),
+    started >48h ago, and haven't declared a winner yet.
+    Evaluates open rates and selects the winning subject line.
+    """
+    logger.info("Running detect_ab_test_winners_job...")
+    async with async_session_maker() as db:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        threshold_time = now - datetime.timedelta(hours=48)
+        
+        q = await db.execute(
+            select(Campaign).where(
+                and_(
+                    Campaign.status == "active",
+                    Campaign.subject_b != None,
+                    Campaign.ab_winner == None,
+                    Campaign.started_at <= threshold_time
+                )
+            )
+        )
+        campaigns = q.scalars().all()
+        
+        for campaign in campaigns:
+            await resolve_ab_winner_internal(campaign, db)
+
+WARMUP_TEMPLATES = [
+    {"subject": "Feedback on your services", "body": "Hello,\nI visited your website recently and was interested in your services. Do you have a brochure or pricing sheet you could send over? Thanks!"},
+    {"subject": "Quick question about business hours", "body": "Hi there,\nAre you open during the upcoming holiday weekend? We are planning a visit and wanted to confirm your hours. Best!"},
+    {"subject": "Partnership inquiry", "body": "Hello,\nI'm looking to connect with your business development team. We have a proposal for a joint marketing initiative that might interest you. Who is the best contact person? Best regards."},
+    {"subject": "Schedule a brief call", "body": "Hi,\nI'd like to schedule a quick 10-minute call to discuss a potential project. Could you share your calendar link? Thank you!"},
+    {"subject": "Inquiry regarding custom pricing", "body": "Hello,\nDo you offer custom pricing packages for small startups? We have a team of 5 and would love to know more. Thanks."}
+]
+
+async def warmup_cron_job():
+    """
+    Daily cron job that runs through all connected email accounts that have warmup enabled.
+    Sends warmup emails and calculates reputation and health scores.
+    """
+    logger.info("Running warmup_cron_job...")
+    async with async_session_maker() as db:
+        # 1. Fetch all warming email accounts
+        q = await db.execute(
+            select(EmailAccount).where(EmailAccount.warmup_status == "warming")
+        )
+        warming_accounts = q.scalars().all()
+        
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        
+        for account in warming_accounts:
+            # 2. Get or create WarmupLog for today
+            q_log = await db.execute(
+                select(WarmupLog).where(
+                    and_(
+                        WarmupLog.email_account_id == account.id,
+                        WarmupLog.date == today
+                    )
+                )
+            )
+            log = q_log.scalars().first()
+            if not log:
+                log = WarmupLog(
+                    email_account_id=account.id,
+                    date=today,
+                    emails_sent=0,
+                    emails_received=0,
+                    replies_sent=0,
+                    inbox_moved=0,
+                    spam_found=0,
+                    health_score=account.warmup_health_score
+                )
+                db.add(log)
+                await db.commit()
+                await db.refresh(log)
+            
+            # 3. Determine daily sending volume target based on warmup age
+            if not account.warmup_started_at:
+                account.warmup_started_at = datetime.datetime.now(datetime.timezone.utc)
+                await db.commit()
+                
+            started_dt = account.warmup_started_at.replace(tzinfo=datetime.timezone.utc)
+            days_warming = (datetime.datetime.now(datetime.timezone.utc) - started_dt).days + 1
+            
+            if days_warming <= 3:
+                target_volume = 5
+                target_reply_rate = 0.80
+            elif days_warming <= 7:
+                target_volume = 10
+                target_reply_rate = 0.75
+            elif days_warming <= 14:
+                target_volume = 20
+                target_reply_rate = 0.70
+            elif days_warming <= 21:
+                target_volume = 30
+                target_reply_rate = 0.65
+            elif days_warming <= 30:
+                target_volume = 40
+                target_reply_rate = 0.60
+            else:
+                target_volume = 50
+                target_reply_rate = 0.50
+                
+            # If already sent the daily quota, skip sending more
+            if log.emails_sent >= target_volume:
+                continue
+                
+            # 4. Generate warmup outbound emails
+            emails_to_send = target_volume - log.emails_sent
+            
+            # Get list of other warming accounts in the pool
+            q_pool = await db.execute(
+                select(EmailAccount).where(
+                    and_(
+                        EmailAccount.warmup_status == "warming",
+                        EmailAccount.id != account.id
+                    )
+                )
+            )
+            pool = q_pool.scalars().all()
+            
+            for _ in range(emails_to_send):
+                # Select target (recipient)
+                recipient_email = ""
+                recipient_account = None
+                
+                if pool:
+                    recipient_account = random.choice(pool)
+                    recipient_email = recipient_account.from_email
+                else:
+                    # Fallback to mock pool in sandbox/local dev
+                    recipient_email = "mock-warmup-pool@getleads.com"
+                    
+                # Pick a random template
+                tmpl = random.choice(WARMUP_TEMPLATES)
+                subj = tmpl["subject"]
+                body = tmpl["body"]
+                
+                # Deliver warmup email with custom warmup header
+                success = await send_email(
+                    account,
+                    recipient_email,
+                    subj,
+                    body,
+                    db,
+                    headers={"X-GetLeads-Warmup": "true"}
+                )
+                if success:
+                    log.emails_sent += 1
+                    
+                    is_sender_mock = (
+                        not account.access_token
+                        or account.access_token.startswith("mock-")
+                        or account.access_token == "mock-token"
+                    )
+                    is_recipient_mock = (
+                        not recipient_account
+                        or not recipient_account.access_token
+                        or recipient_account.access_token.startswith("mock-")
+                        or recipient_account.access_token == "mock-token"
+                    )
+
+                    # Only run simulation if sender or recipient is mock. 
+                    # If both are real connected accounts, we let the real IMAP worker handle it.
+                    if recipient_account and (is_sender_mock or is_recipient_mock):
+                        # Find or create today's log for recipient
+                        q_rec_log = await db.execute(
+                            select(WarmupLog).where(
+                                and_(
+                                    WarmupLog.email_account_id == recipient_account.id,
+                                    WarmupLog.date == today
+                                )
+                            )
+                        )
+                        rec_log = q_rec_log.scalars().first()
+                        if not rec_log:
+                            rec_log = WarmupLog(
+                                email_account_id=recipient_account.id,
+                                date=today,
+                                emails_sent=0,
+                                emails_received=0,
+                                replies_sent=0,
+                                inbox_moved=0,
+                                spam_found=0,
+                                health_score=recipient_account.warmup_health_score
+                            )
+                            db.add(rec_log)
+                            await db.commit()
+                            await db.refresh(rec_log)
+                            
+                        rec_log.emails_received += 1
+                        
+                        # Simulate Inbox Deliverability: 95% chance of moving to inbox, 5% spam
+                        if random.random() < 0.95:
+                            rec_log.inbox_moved += 1
+                        else:
+                            rec_log.spam_found += 1
+                            
+                        # Simulate Reply: based on target reply rate
+                        if random.random() < target_reply_rate:
+                            rec_log.replies_sent += 1
+                            log.emails_received += 1
+                            
+                            # Sim sender receiving reply
+                            if random.random() < 0.95:
+                                log.inbox_moved += 1
+                            else:
+                                log.spam_found += 1
+                                
+                        await db.commit()
+                    elif not recipient_account:
+                        # Recipient is mock (fallback pool): simulate its response actions directly on sender log
+                        # Sim receipt
+                        log.emails_received += 1
+                        
+                        # Inbox Deliverability
+                        if random.random() < 0.95:
+                            log.inbox_moved += 1
+                        else:
+                            log.spam_found += 1
+                            
+                        # Reply
+                        if random.random() < target_reply_rate:
+                            log.replies_sent += 1
+                            
+                        await db.commit()
+                        
+            # Recalculate and update health score for this account
+            total_delivery = log.inbox_moved + log.spam_found
+            inbox_delivery_rate = log.inbox_moved / total_delivery if total_delivery > 0 else 0.95
+            spam_rate = log.spam_found / total_delivery if total_delivery > 0 else 0.05
+            
+            reply_rate = log.replies_sent / log.emails_received if log.emails_received > 0 else target_reply_rate
+            
+            age_factor = min(1.0, days_warming / 30.0)
+            
+            computed_score = (
+                inbox_delivery_rate * 0.4 +
+                reply_rate * 0.3 +
+                (1.0 - spam_rate) * 0.2 +
+                age_factor * 0.1
+            ) * 100.0
+            
+            final_health = int(min(100.0, max(0.0, computed_score)))
+            log.health_score = final_health
+            account.warmup_health_score = final_health
+            await db.commit()
+            
+            # Safety rules: Pause warm-up if health score < 30
+            if final_health < 30:
+                account.warmup_status = "paused"
+                account.is_active = False # Deactivate mailbox
+                await db.commit()
+                
+                # Fetch user details to alert them
+                q_user = await db.execute(
+                    select(User).where(User.id == account.user_id)
+                )
+                user = q_user.scalars().first()
+                if user:
+                    message_text = (
+                        f"⚠️ <b>Warming Account Suspended!</b>\n\n"
+                        f"Mailbox: <b>{account.from_email}</b>\n"
+                        f"Critical Health Score: <b>{final_health}/100</b>\n"
+                        f"Status: Warm-up auto-paused, and mailbox is deactivated.\n\n"
+                        f"<i>Action Required: Please review spam complaint trends or connect a different outbound email domain.</i>"
+                    )
+                    await send_telegram_notification(user, message_text)
+                    
+                    # Auto pause user's active campaigns connected to this mailbox
+                    q_camps = await db.execute(
+                        select(Campaign).where(
+                            and_(
+                                Campaign.email_account_id == account.id,
+                                Campaign.status == "active"
+                            )
+                        )
+                    )
+                    camps = q_camps.scalars().all()
+                    for camp in camps:
+                        camp.status = "paused"
+                    await db.commit()
+
+def start_scheduler():
+    """Initializes and starts the periodic background jobs runner."""
+    if not scheduler.running:
+        # 1. Job to send emails (runs every 1 minute)
+        scheduler.add_job(
+            send_emails_job,
+            "interval",
+            minutes=1,
+            id="send_emails_job",
+            replace_existing=True
+        )
+        # 2. Job to check follow-up sequencing (runs every 5 minutes)
+        scheduler.add_job(
+            check_follow_ups_job,
+            "interval",
+            minutes=5,
+            id="check_follow_ups_job",
+            replace_existing=True
+        )
+        # 3. Job to parse replies & bounces (runs every 2 minutes in development to make it responsive)
+        scheduler.add_job(
+            check_replies_and_bounces_job,
+            "interval",
+            minutes=2,
+            id="check_replies_and_bounces_job",
+            replace_existing=True
+        )
+        # 4. Job for daily Telegram reports (runs at 10 PM daily)
+        scheduler.add_job(
+            send_daily_reports_job,
+            "cron",
+            hour=22,
+            minute=0,
+            id="send_daily_reports_job",
+            replace_existing=True
+        )
+        # 5. Job to check A/B testing winners hourly
+        scheduler.add_job(
+            detect_ab_test_winners_job,
+            "interval",
+            hours=1,
+            id="detect_ab_test_winners_job",
+            replace_existing=True
+        )
+        # 6. Job for daily email Warm-up (runs at 11 PM daily)
+        scheduler.add_job(
+            warmup_cron_job,
+            "cron",
+            hour=23,
+            minute=0,
+            id="warmup_cron_job",
+            replace_existing=True
+        )
+        # 7. Job for real-time IMAP Warm-up processing (runs every 10 minutes)
+        scheduler.add_job(
+            process_incoming_warmups_job,
+            "interval",
+            minutes=10,
+            id="process_incoming_warmups_job",
+            replace_existing=True
+        )
+        
+        scheduler.start()
+
+async def process_incoming_warmups_job():
+    """
+    Background job to run IMAP checks and auto-replies for all active warming mailboxes.
+    Runs periodically (e.g., every 10 minutes).
+    """
+    logger.info("Running process_incoming_warmups_job...")
+    async with async_session_maker() as db:
+        # Fetch all warming accounts
+        q = await db.execute(
+            select(EmailAccount).where(EmailAccount.warmup_status == "warming")
+        )
+        warming_accounts = q.scalars().all()
+        for account in warming_accounts:
+            try:
+                await process_incoming_warmups(account, db)
+            except Exception as e:
+                logger.error(f"Error in process_incoming_warmups_job for {account.from_email}: {str(e)}")
+        logger.info("APScheduler Background Jobs started successfully.")
+
+def stop_scheduler():
+    """Clean shutdown of the scheduler."""
+    if scheduler.running:
+        scheduler.shutdown()
+        logger.info("APScheduler Background Jobs shut down successfully.")

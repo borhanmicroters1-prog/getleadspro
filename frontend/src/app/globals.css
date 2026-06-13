@@ -1,0 +1,389 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ========================================
+   DARK THEME (Default)
+   ======================================== */
+:root {
+  /* Color Palette — Emerald-based to match homepage */
+  --bg-primary: 220 20% 4%;         /* #07090e — Deep dark navy */
+  --bg-secondary: 220 18% 7%;       /* #0d1017 */
+  --bg-tertiary: 218 20% 12%;       /* #161d28 */
+  
+  --text-primary: 0 0% 100%;        /* White */
+  --text-secondary: 215 20% 75%;    /* Light grey */
+  --text-muted: 215 16% 50%;        /* Dimmed grey */
+  
+  --accent: 160 84% 39%;            /* Emerald #10B981 */
+  --accent-secondary: 162 72% 45%;  /* Emerald-lighter #17C994 */
+  --accent-cyan: 160 100% 48%;      /* Emerald-neon glow */
+  
+  --success: 142 76% 36%;           /* Green */
+  --danger: 346 84% 50%;            /* Crimson Red */
+  --warning: 38 92% 50%;            /* Warm Amber */
+  
+  --border-color: 218 15% 18%;
+  --border-glow: 160 84% 39% / 0.15;
+  
+  /* Glassmorphism properties */
+  --glass-bg: rgb(9 13 22 / 55%);
+  --glass-border: rgb(255 255 255 / 6%);
+  --glass-blur: 16px;
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --glass-shadow-hover: 0 12px 40px 0 rgba(0, 0, 0, 0.45);
+  
+  /* Card backgrounds */
+  --card-bg: rgb(9 13 22 / 45%);
+  --card-bg-alt: rgb(9 13 22 / 35%);
+  
+  /* Gradient background */
+  --gradient-bg-main: radial-gradient(circle at 10% 20%, hsl(218 20% 8% / 1) 0%, hsl(220 18% 5% / 1) 90%);
+  --gradient-glow-1: rgba(16, 185, 129, 0.06);
+  --gradient-glow-2: rgba(5, 150, 105, 0.06);
+  
+  /* Navbar */
+  --navbar-bg: rgb(9 13 22 / 40%);
+  
+  /* Layout constraints */
+  --sidebar-width: 260px;
+  --navbar-height: 70px;
+  
+  /* Fonts */
+  --font-family-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-family-heading: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* ========================================
+   LIGHT THEME
+   ======================================== */
+[data-theme="light"] {
+  --bg-primary: 210 20% 98%;        /* #f8fafb — Very light grey-blue */
+  --bg-secondary: 210 15% 95%;      /* #f0f3f5 */
+  --bg-tertiary: 210 14% 91%;       /* #e5e9ed */
+  
+  --text-primary: 220 20% 12%;      /* #161d28 — Near black */
+  --text-secondary: 215 12% 40%;    /* #5a6577 */
+  --text-muted: 215 10% 58%;        /* #8693a5 */
+  
+  --accent: 160 84% 39%;            /* Emerald stays the same */
+  --accent-secondary: 162 72% 38%;
+  --accent-cyan: 160 84% 35%;
+  
+  --success: 142 76% 36%;
+  --danger: 346 77% 50%;
+  --warning: 38 92% 50%;
+  
+  --border-color: 214 20% 88%;
+  --border-glow: 160 84% 39% / 0.12;
+  
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-blur: 20px;
+  --glass-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.06);
+  --glass-shadow-hover: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+  
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-bg-alt: rgba(255, 255, 255, 0.5);
+  
+  --gradient-bg-main: linear-gradient(135deg, hsl(210 20% 97%) 0%, hsl(160 20% 96%) 50%, hsl(210 20% 98%) 100%);
+  --gradient-glow-1: rgba(16, 185, 129, 0.04);
+  --gradient-glow-2: rgba(5, 150, 105, 0.03);
+  
+  --navbar-bg: rgba(255, 255, 255, 0.65);
+}
+
+/* ========================================
+   THEME TRANSITION — Smooth switching
+   ======================================== */
+html, body,
+.glass-panel,
+.gradient-bg,
+.btn,
+.btn-primary,
+.btn-secondary,
+.input-field,
+.badge {
+  transition: background-color 0.35s ease, color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+/* Reset and Core Setup */
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: hsl(var(--bg-primary));
+  color: hsl(var(--text-primary));
+  font-family: var(--font-family-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Typography and Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-heading);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--bg-primary));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-color));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent) / 0.4);
+}
+
+/* Background Gradients & Glows */
+.gradient-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -10;
+  background: var(--gradient-bg-main);
+  overflow: hidden;
+}
+
+.gradient-bg::after {
+  content: "";
+  position: absolute;
+  top: -20%;
+  left: -20%;
+  width: 140%;
+  height: 140%;
+  background: 
+    radial-gradient(ellipse 40% 40% at 30% 20%, var(--gradient-glow-1), transparent 70%),
+    radial-gradient(ellipse 35% 35% at 70% 80%, var(--gradient-glow-2), transparent 70%);
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+/* Premium Layout Grid & Layout Shell */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-left: var(--sidebar-width);
+  padding-top: var(--navbar-height);
+  transition: margin-left 0.3s ease;
+}
+
+.content-pane {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Glassmorphic Panel Styles */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-panel:hover {
+  border-color: hsl(var(--accent) / 0.15);
+  box-shadow: var(--glass-shadow-hover);
+}
+
+/* Interactive Components styling */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 500;
+  font-size: 0.925rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-secondary)));
+  color: #fff;
+  box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px 0 rgba(16, 185, 129, 0.45);
+}
+
+.btn-secondary {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  color: hsl(var(--text-primary));
+}
+
+.btn-secondary:hover {
+  background: hsl(var(--bg-tertiary));
+  border-color: hsl(var(--accent) / 0.4);
+}
+
+.input-field {
+  width: 100%;
+  background: hsl(var(--bg-tertiary));
+  border: 1px solid hsl(var(--border-color));
+  color: hsl(var(--text-primary));
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-field:focus {
+  border-color: hsl(var(--accent));
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+/* Micro-animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Badge classes */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-success {
+  background-color: hsl(var(--success) / 0.15);
+  color: hsl(var(--success));
+  border: 1px solid hsl(var(--success) / 0.3);
+}
+
+.badge-warning {
+  background-color: hsl(var(--warning) / 0.15);
+  color: hsl(var(--warning));
+  border: 1px solid hsl(var(--warning) / 0.3);
+}
+
+.badge-danger {
+  background-color: hsl(var(--danger) / 0.15);
+  color: hsl(var(--danger));
+  border: 1px solid hsl(var(--danger) / 0.3);
+}
+
+.badge-primary {
+  background-color: hsl(var(--accent) / 0.15);
+  color: hsl(var(--accent));
+  border: 1px solid hsl(var(--accent) / 0.3);
+}
+
+/* Hover effects for interactive links and list rows */
+.campaign-link:hover {
+  color: hsl(var(--accent)) !important;
+}
+
+.lead-selector-row:hover {
+  background-color: hsl(var(--bg-tertiary)) !important;
+}
+
+.disabled-feature {
+  color: hsl(var(--text-muted)) !important;
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.15);
+}
+
+/* ========================================
+   THEME TOGGLE BUTTON
+   ======================================== */
+.theme-toggle-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: hsl(var(--text-secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-toggle-btn:hover {
+  background: hsl(var(--bg-tertiary));
+  border-color: hsl(var(--accent) / 0.4);
+  color: hsl(var(--accent));
+  transform: scale(1.05);
+}
+
+.theme-toggle-btn svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-toggle-btn:hover svg {
+  transform: rotate(30deg);
+}
+
+[data-theme="light"] .theme-toggle-btn:hover svg {
+  transform: rotate(-30deg);
+}
