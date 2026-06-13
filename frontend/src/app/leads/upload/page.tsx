@@ -27,40 +27,9 @@ function CsvUploadContent() {
   const [error, setError] = useState("");
   const [stats, setStats] = useState<UploadStats | null>(null);
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  
-  // Inline campaign creation state
-  const [newCampaignName, setNewCampaignName] = useState("");
-  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
-  const [inlineError, setInlineError] = useState("");
+  const [campaignName, setCampaignName] = useState("");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleCreateNewCampaign = async () => {
-    if (!newCampaignName.trim()) return;
-    setIsCreatingCampaign(true);
-    setInlineError("");
-    try {
-      const newCampaign = await api.post("/api/campaigns", { name: newCampaignName.trim() });
-      if (newCampaign && newCampaign.id) {
-        setCampaigns((prev) => [newCampaign, ...prev]);
-        setSelectedCampaignId(newCampaign.id);
-        setNewCampaignName("");
-      } else {
-        setInlineError("Failed to create campaign. Invalid response.");
-      }
-    } catch (err: any) {
-      setInlineError(err.message || "Failed to create campaign.");
-    } finally {
-      setIsCreatingCampaign(false);
-    }
-  };
-
-  useEffect(() => {
-    if (campaignQueryId) {
-      setSelectedCampaignId(campaignQueryId);
-    }
-  }, [campaignQueryId]);
 
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
@@ -76,6 +45,15 @@ function CsvUploadContent() {
         .catch((err) => console.error("Error fetching campaigns:", err));
     }
   }, [router]);
+
+  useEffect(() => {
+    if (campaignQueryId && campaigns.length > 0) {
+      const camp = campaigns.find((c) => c.id === campaignQueryId);
+      if (camp) {
+        setCampaignName(camp.name);
+      }
+    }
+  }, [campaignQueryId, campaigns]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -123,7 +101,7 @@ function CsvUploadContent() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || selectedCampaignId === "create_new") return;
+    if (!file) return;
 
     setIsUploading(true);
     setError("");
@@ -133,9 +111,13 @@ function CsvUploadContent() {
     formData.append("file", file);
 
     try {
-      const url = selectedCampaignId 
-        ? `/api/leads/upload?campaign_id=${selectedCampaignId}`
-        : `/api/leads/upload`;
+      const queryParams = new URLSearchParams();
+      if (campaignName.trim()) {
+        queryParams.append("campaign_name", campaignName.trim());
+      }
+      const queryString = queryParams.toString();
+      const url = queryString ? `/api/leads/upload?${queryString}` : `/api/leads/upload`;
+
       const result = await api.post(url, formData, { isMultipart: true });
       setStats({
         filename: result.filename,
@@ -144,15 +126,13 @@ function CsvUploadContent() {
         skipped_rows: result.skipped_rows,
       });
       setFile(null); // Clear selected file after success
-      setSelectedCampaignId(""); // Clear selected campaign
+      setCampaignName(""); // Clear selected campaign
     } catch (err: any) {
       setError(err.message || "Failed to upload file.");
     } finally {
       setIsUploading(false);
     }
   };
-
-  const selectedCampaign = campaigns.find((camp) => camp.id === selectedCampaignId);
 
   if (loading || !user) {
     return (
@@ -227,83 +207,58 @@ function CsvUploadContent() {
                 )}
 
                 {/* Campaign Selector Dropdown */}
+                {/* Campaign Name Input */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  <label style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
-                    Assign to Campaign <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
+                  <label htmlFor="campaign-name-input" style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
+                    Campaign Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
                   </label>
-                  <select 
-                    value={selectedCampaignId} 
-                    onChange={(e) => setSelectedCampaignId(e.target.value)} 
-                    className="input-field"
-                    style={{ width: "100%", padding: "0.75rem", fontSize: "0.875rem", cursor: "pointer" }}
-                    disabled={isUploading}
-                  >
-                    <option value="">-- No Campaign (Import to Leads List) --</option>
+                  <div style={{ position: "relative" }}>
+                    <input 
+                      id="campaign-name-input"
+                      type="text"
+                      list="campaign-suggestions"
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      placeholder="Enter a new campaign name, or select an existing one..."
+                      className="input-field"
+                      style={{ 
+                        width: "100%", 
+                        padding: "0.75rem 0.75rem 0.75rem 2.25rem", 
+                        fontSize: "0.875rem",
+                        borderRadius: "10px"
+                      }}
+                      disabled={isUploading}
+                    />
+                    <span style={{ 
+                      position: "absolute", 
+                      left: "0.75rem", 
+                      top: "50%", 
+                      transform: "translateY(-50%)", 
+                      fontSize: "1rem", 
+                      opacity: 0.7 
+                    }}>
+                      🎯
+                    </span>
+                  </div>
+                  <datalist id="campaign-suggestions">
                     {campaigns.map((camp) => (
-                      <option key={camp.id} value={camp.id}>{camp.name}</option>
+                      <option key={camp.id} value={camp.name} />
                     ))}
-                    <option value="create_new">+ Create New Campaign...</option>
-                  </select>
+                  </datalist>
 
-                  {selectedCampaignId === "create_new" && (
-                    <div style={inlineFormStyle}>
-                      <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "hsl(var(--text-primary))" }}>
-                        Create New Campaign
-                      </span>
-                      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.2rem" }}>
-                        <input
-                          type="text"
-                          placeholder="Campaign Name"
-                          value={newCampaignName}
-                          onChange={(e) => setNewCampaignName(e.target.value)}
-                          className="input-field"
-                          style={{ flex: 1, padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}
-                          disabled={isCreatingCampaign}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreateNewCampaign}
-                          className="btn btn-primary"
-                          style={{ padding: "0.5rem 1rem", fontSize: "0.875rem", whiteSpace: "nowrap" }}
-                          disabled={isCreatingCampaign || !newCampaignName.trim()}
-                        >
-                          {isCreatingCampaign ? "Creating..." : "Create & Select"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCampaignId("");
-                            setNewCampaignName("");
-                            setInlineError("");
-                          }}
-                          className="btn"
-                          style={{ 
-                            padding: "0.5rem 1rem", 
-                            fontSize: "0.875rem", 
-                            backgroundColor: "hsl(var(--bg-secondary))",
-                            border: "1px solid hsl(var(--border-color))",
-                            color: "hsl(var(--text-primary))"
-                          }}
-                          disabled={isCreatingCampaign}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      {inlineError && (
-                        <p style={{ color: "hsl(var(--danger))", fontSize: "0.75rem", marginTop: "0.2rem" }}>
-                          ⚠️ {inlineError}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedCampaign && (
+                  {campaignName.trim() && (
                     <div style={campaignBadgeStyle}>
-                      🎯 Targets will be assigned to: <strong style={{ color: "hsl(var(--accent-cyan))" }}>{selectedCampaign.name}</strong>
+                      🎯 {campaigns.some(c => c.name.toLowerCase() === campaignName.trim().toLowerCase()) 
+                        ? `Adding leads to the existing campaign: ` 
+                        : `A new draft campaign will be created: `}
+                      <strong style={{ color: "hsl(var(--accent-cyan))", marginLeft: "4px" }}>
+                        {campaignName.trim()}
+                      </strong>
                     </div>
                   )}
+
                   <small style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "2px" }}>
-                    {selectedCampaignId 
+                    {campaignName.trim() 
                       ? "Uploaded leads will be added directly into this campaign's sequence as pending."
                       : "Uploaded leads will be added to your general Leads list. You can assign them to a campaign later."}
                   </small>
@@ -313,7 +268,7 @@ function CsvUploadContent() {
                   type="submit" 
                   className="btn btn-primary" 
                   style={{ width: "100%", height: "48px" }}
-                  disabled={isUploading || !file || selectedCampaignId === "create_new"}
+                  disabled={isUploading || !file}
                 >
                   {isUploading ? "Uploading & Processing..." : "Upload & Parse CSV"}
                 </button>

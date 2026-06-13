@@ -319,6 +319,7 @@ async def get_scrape_task_status(task_id: str):
 async def upload_csv_leads(
     file: UploadFile = File(...),
     campaign_id: Optional[str] = None,
+    campaign_name: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -335,6 +336,26 @@ async def upload_csv_leads(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Selected campaign not found."
             )
+    elif campaign_name and campaign_name != "null" and campaign_name != "undefined" and campaign_name.strip():
+        camp_name_clean = campaign_name.strip()
+        camp_res = await db.execute(
+            select(Campaign).where(
+                and_(
+                    Campaign.user_id == current_user["id"],
+                    func.lower(Campaign.name) == func.lower(camp_name_clean)
+                )
+            )
+        )
+        campaign = camp_res.scalars().first()
+        if not campaign:
+            # Create a new draft campaign with this name
+            campaign = Campaign(
+                user_id=current_user["id"],
+                name=camp_name_clean,
+                status="draft"
+            )
+            db.add(campaign)
+            await db.flush() # Populate campaign.id
 
     # Read file content
     contents = await file.read()
