@@ -98,8 +98,8 @@ class Lead(Base):
     title = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
-    # Unique constraint per user to prevent duplicate email records
-    __table_args__ = (UniqueConstraint("user_id", "email", name="uq_user_lead_email"),)
+    # Unique constraint per user to prevent duplicate email records per campaign
+    __table_args__ = (UniqueConstraint("user_id", "campaign_name", "email", name="uq_user_campaign_lead_email"),)
 
     # Relationships
     user = relationship("User", back_populates="leads")

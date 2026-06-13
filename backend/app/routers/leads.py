@@ -75,10 +75,14 @@ async def run_google_maps_scrape_task(
                     user.credits -= 1
                     credits_deducted += 1
                 
-                # Check for duplicates per user in database
+                # Check for duplicates per user and campaign (None for scraped leads)
                 dup_res = await db.execute(
                     select(Lead).where(
-                        and_(Lead.user_id == user_id, Lead.email == lead_data["email"])
+                        and_(
+                            Lead.user_id == user_id, 
+                            Lead.email == lead_data["email"],
+                            Lead.campaign_name == None
+                        )
                     )
                 )
                 existing_lead = dup_res.scalars().first()
@@ -174,7 +178,11 @@ async def run_facebook_ads_scrape_task(
                 
                 dup_res = await db.execute(
                     select(Lead).where(
-                        and_(Lead.user_id == user_id, Lead.email == lead_data["email"])
+                        and_(
+                            Lead.user_id == user_id,
+                            Lead.email == lead_data["email"],
+                            Lead.campaign_name == None
+                        )
                     )
                 )
                 existing_lead = dup_res.scalars().first()
@@ -384,10 +392,15 @@ async def upload_csv_leads(
             
         parsed += 1
         
-        # Check database for duplicates per user
+        # Check database for duplicates per user and campaign
+        target_campaign_name = campaign.name if campaign else None
         dup_res = await db.execute(
             select(Lead).where(
-                and_(Lead.user_id == current_user["id"], Lead.email == email)
+                and_(
+                    Lead.user_id == current_user["id"], 
+                    Lead.email == email,
+                    Lead.campaign_name == target_campaign_name
+                )
             )
         )
         existing_lead = dup_res.scalars().first()

@@ -56,9 +56,13 @@ CREATE TABLE IF NOT EXISTS public.leads (
     status TEXT DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'replied', 'bounced', 'unsubscribed', 'ooo')),
     score REAL DEFAULT 0,
     title TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    UNIQUE (user_id, email)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
+
+-- Unique constraint per user to prevent duplicate email records per campaign.
+-- Using COALESCE to handle NULL campaign names as empty string in unique index.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_campaign_lead_email 
+ON public.leads (user_id, COALESCE(campaign_name, ''), email);
 
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 
