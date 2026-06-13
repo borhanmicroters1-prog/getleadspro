@@ -17,7 +17,7 @@ services:
       - key: SUPER_ADMIN_EMAIL
         value: "borhan.seoexpert@gmail.com"
       - key: FRONTEND_URL
-        placeholder: "Enter Vercel frontend URL after deploying it (e.g. https://getclient-frontend.vercel.app)"
+        value: "https://getleadspro-frontend.vercel.app"
       - key: SSLCOMMERZ_STORE_ID
         placeholder: "Enter SSLCommerz Store ID (optional)"
       - key: SSLCOMMERZ_STORE_PASSWORD
