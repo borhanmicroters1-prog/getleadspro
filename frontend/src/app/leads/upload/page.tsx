@@ -123,7 +123,7 @@ function CsvUploadContent() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !selectedCampaignId || selectedCampaignId === "create_new") return;
+    if (!file || selectedCampaignId === "create_new") return;
 
     setIsUploading(true);
     setError("");
@@ -133,7 +133,9 @@ function CsvUploadContent() {
     formData.append("file", file);
 
     try {
-      const url = `/api/leads/upload?campaign_id=${selectedCampaignId}`;
+      const url = selectedCampaignId 
+        ? `/api/leads/upload?campaign_id=${selectedCampaignId}`
+        : `/api/leads/upload`;
       const result = await api.post(url, formData, { isMultipart: true });
       setStats({
         filename: result.filename,
@@ -227,7 +229,7 @@ function CsvUploadContent() {
                 {/* Campaign Selector Dropdown */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   <label style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
-                    Assign to Campaign <span style={{ color: "hsl(var(--danger))" }}>*</span>
+                    Assign to Campaign <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
                   </label>
                   <select 
                     value={selectedCampaignId} 
@@ -236,7 +238,7 @@ function CsvUploadContent() {
                     style={{ width: "100%", padding: "0.75rem", fontSize: "0.875rem", cursor: "pointer" }}
                     disabled={isUploading}
                   >
-                    <option value="">-- Select Campaign (Required) --</option>
+                    <option value="">-- No Campaign (Import to Leads List) --</option>
                     {campaigns.map((camp) => (
                       <option key={camp.id} value={camp.id}>{camp.name}</option>
                     ))}
@@ -301,7 +303,9 @@ function CsvUploadContent() {
                     </div>
                   )}
                   <small style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "2px" }}>
-                    Uploaded leads will be added directly into this campaign's sequence as pending.
+                    {selectedCampaignId 
+                      ? "Uploaded leads will be added directly into this campaign's sequence as pending."
+                      : "Uploaded leads will be added to your general Leads list. You can assign them to a campaign later."}
                   </small>
                 </div>
 
@@ -309,7 +313,7 @@ function CsvUploadContent() {
                   type="submit" 
                   className="btn btn-primary" 
                   style={{ width: "100%", height: "48px" }}
-                  disabled={isUploading || !file || !selectedCampaignId || selectedCampaignId === "create_new"}
+                  disabled={isUploading || !file || selectedCampaignId === "create_new"}
                 >
                   {isUploading ? "Uploading & Processing..." : "Upload & Parse CSV"}
                 </button>

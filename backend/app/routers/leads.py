@@ -310,27 +310,23 @@ async def get_scrape_task_status(task_id: str):
 @router.post("/upload")
 async def upload_csv_leads(
     file: UploadFile = File(...),
-    campaign_id: str = None,
+    campaign_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    if not campaign_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Campaign ID is required."
+    campaign = None
+    if campaign_id and campaign_id != "null" and campaign_id != "undefined" and campaign_id.strip():
+        camp_res = await db.execute(
+            select(Campaign).where(
+                and_(Campaign.id == campaign_id, Campaign.user_id == current_user["id"])
+            )
         )
-
-    camp_res = await db.execute(
-        select(Campaign).where(
-            and_(Campaign.id == campaign_id, Campaign.user_id == current_user["id"])
-        )
-    )
-    campaign = camp_res.scalars().first()
-    if not campaign:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Selected campaign not found."
-        )
+        campaign = camp_res.scalars().first()
+        if not campaign:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Selected campaign not found."
+            )
 
     # Read file content
     contents = await file.read()
