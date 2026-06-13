@@ -122,7 +122,7 @@ async def create_campaign(
     send_end_hour=request.send_end_hour,
     timezone=request.timezone,
     send_interval=request.send_interval,
-    started_at=datetime.now(timezone.utc) if request.status == "active" else None
+    started_at=datetime.now(timezone.utc).replace(tzinfo=None) if request.status == "active" else None
   )
   
   db.add(campaign)
@@ -252,7 +252,7 @@ async def start_campaign(
     
   campaign.status = "active"
   if not campaign.started_at:
-    campaign.started_at = datetime.now(timezone.utc)
+    campaign.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
   await db.commit()
   return campaign.to_dict()

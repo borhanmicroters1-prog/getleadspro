@@ -181,13 +181,13 @@ async def send_emails_job():
                 if success:
                     c_lead.status = "sent"
                     c_lead.sent_count = 1
-                    c_lead.last_sent_at = datetime.datetime.now(datetime.timezone.utc)
+                    c_lead.last_sent_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
                     lead.status = "contacted"
                     mailbox.emails_sent_today += 1
                     
                     # Schedule follow-up if follow_up_1 is set
                     if campaign.follow_up_1_days:
-                        c_lead.next_follow_up_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=campaign.follow_up_1_days)
+                        c_lead.next_follow_up_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=campaign.follow_up_1_days)).replace(tzinfo=None)
                     else:
                         c_lead.next_follow_up_at = None
 
@@ -295,11 +295,11 @@ async def check_follow_ups_job():
             
             if success:
                 c_lead.sent_count = step_number
-                c_lead.last_sent_at = datetime.datetime.now(datetime.timezone.utc)
+                c_lead.last_sent_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
                 mailbox.emails_sent_today += 1
 
                 if next_follow_up_days:
-                    c_lead.next_follow_up_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=next_follow_up_days)
+                    c_lead.next_follow_up_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=next_follow_up_days)).replace(tzinfo=None)
                 else:
                     c_lead.next_follow_up_at = None
 
@@ -615,7 +615,7 @@ async def warmup_cron_job():
             
             # 3. Determine daily sending volume target based on warmup age
             if not account.warmup_started_at:
-                account.warmup_started_at = datetime.datetime.now(datetime.timezone.utc)
+                account.warmup_started_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
                 await db.commit()
                 
             started_dt = account.warmup_started_at.replace(tzinfo=datetime.timezone.utc)

@@ -67,7 +67,7 @@ async def start_warmup(
     account.warmup_enabled = True
     account.warmup_status = "warming"
     if not account.warmup_started_at:
-        account.warmup_started_at = datetime.now(timezone.utc)
+        account.warmup_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
     await db.commit()
     await db.refresh(account)

@@ -37,6 +37,10 @@ class GUID(TypeDecorator):
 
 Base = declarative_base()
 
+def utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -50,7 +54,7 @@ class User(Base):
     telegram_chat_id = Column(String(255), nullable=True)
     telegram_bot_token = Column(String(255), nullable=True)
     is_admin = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     leads = relationship("Lead", back_populates="user", cascade="all, delete-orphan")
@@ -92,7 +96,7 @@ class Lead(Base):
     status = Column(String(50), default="new")  # new, contacted, replied, bounced, unsubscribed, ooo
     score = Column(Float, default=0.0)
     title = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Unique constraint per user to prevent duplicate email records
     __table_args__ = (UniqueConstraint("user_id", "email", name="uq_user_lead_email"),)
@@ -129,7 +133,7 @@ class CreditsLog(Base):
     amount = Column(Integer, nullable=False)
     balance_after = Column(Integer, nullable=False)
     reference = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="credits_logs")
@@ -154,7 +158,7 @@ class Blacklist(Base):
     type = Column(String(50), nullable=False)  # email, domain
     value = Column(String(255), nullable=False)
     reason = Column(String(500), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Unique constraint per user to prevent duplicate blacklist entries
     __table_args__ = (UniqueConstraint("user_id", "value", name="uq_user_blacklist_value"),)
@@ -186,7 +190,7 @@ class EmailAccount(Base):
     daily_limit = Column(Integer, default=50)
     emails_sent_today = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Warm-up Fields
     warmup_enabled = Column(Boolean, default=False)
@@ -247,7 +251,7 @@ class Campaign(Base):
     timezone = Column(String(100), default="UTC")
     send_interval = Column(Integer, default=2, nullable=False)
     
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -295,7 +299,7 @@ class CampaignLead(Base):
     last_sent_at = Column(DateTime, nullable=True)
     next_follow_up_at = Column(DateTime, nullable=True)
     assigned_subject = Column(String(10), default="a") # a or b
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     campaign = relationship("Campaign", back_populates="leads")
@@ -327,7 +331,7 @@ class WarmupLog(Base):
     inbox_moved = Column(Integer, default=0)
     spam_found = Column(Integer, default=0)
     health_score = Column(Integer, default=100)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Unique constraint per account and date
     __table_args__ = (UniqueConstraint("email_account_id", "date", name="uq_email_account_warmup_date"),)
