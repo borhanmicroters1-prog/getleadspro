@@ -56,8 +56,10 @@ export default function EmailAccountsPage() {
     try {
       const data = await api.get("/api/email-accounts");
       setAccounts(data || []);
+      setError("");
     } catch (err: any) {
       console.error("Error fetching email accounts:", err);
+      setError("Failed to fetch");
     }
   };
 
