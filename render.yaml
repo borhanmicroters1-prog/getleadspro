@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: getclient-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        placeholder: "Enter Supabase PostgreSQL URL (postgresql+asyncpg://...)"
+      - key: SUPABASE_JWT_SECRET
+        placeholder: "Enter Supabase JWT Secret"
+      - key: SUPABASE_PROJECT_ID
+        value: "grdqjnazfdznbviopmxf"
+      - key: SUPER_ADMIN_EMAIL
+        value: "borhan.seoexpert@gmail.com"
+      - key: FRONTEND_URL
+        placeholder: "Enter Vercel frontend URL after deploying it (e.g. https://getclient-frontend.vercel.app)"
+      - key: SSLCOMMERZ_STORE_ID
+        placeholder: "Enter SSLCommerz Store ID (optional)"
+      - key: SSLCOMMERZ_STORE_PASSWORD
+        placeholder: "Enter SSLCommerz Store Password (optional)"
+      - key: SSLCOMMERZ_IS_SANDBOX
+        value: "True"
