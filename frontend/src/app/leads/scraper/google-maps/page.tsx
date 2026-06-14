@@ -26,6 +26,8 @@ export default function GoogleMapsScraper() {
   const [statusText, setStatusText] = useState("");
   const [results, setResults] = useState<ScrapedLead[]>([]);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const [projects, setProjects] = useState<string[]>([]);
+  const [campaignName, setCampaignName] = useState("");
 
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
@@ -34,6 +36,11 @@ export default function GoogleMapsScraper() {
     } else {
       setUser(currentUser);
       setLoading(false);
+      
+      // Fetch existing groups/campaigns
+      api.get("/api/leads/projects")
+        .then((data) => setProjects(data || []))
+        .catch((err) => console.error("Error fetching projects:", err));
     }
   }, [router]);
 
@@ -59,6 +66,7 @@ export default function GoogleMapsScraper() {
         keyword,
         max_results: maxResults,
         extract_emails: extractEmails,
+        campaign_name: campaignName.trim() || null,
       });
 
       const taskId = response.task_id;
@@ -146,6 +154,24 @@ export default function GoogleMapsScraper() {
                     required
                     disabled={isScraping}
                   />
+                </div>
+
+                <div style={inputGroupStyle}>
+                  <label style={labelStyle}>Group / Campaign Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span></label>
+                  <input 
+                    type="text" 
+                    list="group-suggestions"
+                    placeholder="e.g. Dhaka Dentists, USA Ecom" 
+                    value={campaignName}
+                    onChange={(e) => setCampaignName(e.target.value)}
+                    className="input-field"
+                    disabled={isScraping}
+                  />
+                  <datalist id="group-suggestions">
+                    {projects.map((proj) => (
+                      <option key={proj} value={proj} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div style={inputGroupStyle}>

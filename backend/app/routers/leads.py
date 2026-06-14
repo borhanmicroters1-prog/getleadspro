@@ -26,6 +26,7 @@ class ScrapeRequest(BaseModel):
     max_results: int = 50
     extract_emails: bool = True
     country: Optional[str] = "BD"  # Used for FB ads
+    campaign_name: Optional[str] = None
 
 # Helper background task for Google Maps scraping
 async def run_google_maps_scrape_task(
@@ -34,7 +35,8 @@ async def run_google_maps_scrape_task(
     keyword: str, 
     max_results: int, 
     extract_emails: bool,
-    db_sessionmaker
+    db_sessionmaker,
+    campaign_name: Optional[str] = None
 ):
     active_tasks[task_id] = {
         "status": "running",
@@ -75,13 +77,13 @@ async def run_google_maps_scrape_task(
                     user.credits -= 1
                     credits_deducted += 1
                 
-                # Check for duplicates per user and campaign (None for scraped leads)
+                # Check for duplicates per user and campaign
                 dup_res = await db.execute(
                     select(Lead).where(
                         and_(
                             Lead.user_id == user_id, 
                             Lead.email == lead_data["email"],
-                            Lead.campaign_name == None
+                            Lead.campaign_name == campaign_name
                         )
                     )
                 )
@@ -98,6 +100,7 @@ async def run_google_maps_scrape_task(
                         address=lead_data["address"],
                         rating=lead_data["rating"],
                         source="google_maps",
+                        campaign_name=campaign_name,
                         status="new",
                         score=lead_data["score"]
                     )
@@ -141,7 +144,8 @@ async def run_facebook_ads_scrape_task(
     country: str,
     max_results: int, 
     extract_emails: bool,
-    db_sessionmaker
+    db_sessionmaker,
+    campaign_name: Optional[str] = None
 ):
     active_tasks[task_id] = {
         "status": "running",
@@ -181,7 +185,7 @@ async def run_facebook_ads_scrape_task(
                         and_(
                             Lead.user_id == user_id,
                             Lead.email == lead_data["email"],
-                            Lead.campaign_name == None
+                            Lead.campaign_name == campaign_name
                         )
                     )
                 )
@@ -198,6 +202,7 @@ async def run_facebook_ads_scrape_task(
                         address=lead_data["address"],
                         rating=lead_data["rating"],
                         source="facebook_ads",
+                        campaign_name=campaign_name,
                         status="new",
                         score=lead_data["score"]
                     )
@@ -268,7 +273,8 @@ async def trigger_google_maps_scrape(
         request.keyword,
         request.max_results,
         request.extract_emails,
-        async_session_maker
+        async_session_maker,
+        request.campaign_name
     )
     
     return {"task_id": task_id, "status": "pending"}
@@ -304,7 +310,8 @@ async def trigger_facebook_ads_scrape(
         request.country or "BD",
         request.max_results,
         request.extract_emails,
-        async_session_maker
+        async_session_maker,
+        request.campaign_name
     )
     
     return {"task_id": task_id, "status": "pending"}
@@ -624,6 +631,7 @@ async def export_leads_csv(
     search: Optional[str] = None,
     source: Optional[str] = None,
     status_filter: Optional[str] = None,
+    campaign: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -642,6 +650,8 @@ async def export_leads_csv(
         query = query.where(Lead.source == source)
     if status_filter:
         query = query.where(Lead.status == status_filter)
+    if campaign:
+        query = query.where(Lead.campaign_name == campaign)
         
     query = query.order_by(Lead.created_at.desc())
     res = await db.execute(query)

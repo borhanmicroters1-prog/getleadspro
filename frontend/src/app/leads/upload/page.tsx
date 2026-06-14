@@ -217,10 +217,10 @@ function CsvUploadContent() {
                   </div>
                 )}
 
-                {/* Project Name Input */}
+                {/* Group / Campaign Name Input */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   <label htmlFor="project-name-input" style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
-                    Project Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
+                    Group / Campaign Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
                   </label>
                   <div style={{ position: "relative" }}>
                     <input 
@@ -229,7 +229,7 @@ function CsvUploadContent() {
                       list="project-suggestions"
                       value={projectName}
                       onChange={(e) => setProjectName(e.target.value)}
-                      placeholder="Enter a project name (e.g. Real Estate, Doctors)..."
+                      placeholder="Enter a group/campaign name (e.g. Real Estate, Doctors)..."
                       className="input-field"
                       style={{ 
                         width: "100%", 
@@ -258,14 +258,14 @@ function CsvUploadContent() {
 
                   {projectName.trim() && (
                     <div style={campaignBadgeStyle}>
-                      📁 Grouping leads under project: <strong style={{ color: "hsl(var(--accent-cyan))", marginLeft: "4px" }}>{projectName.trim()}</strong>
+                      📁 Grouping leads under group/campaign: <strong style={{ color: "hsl(var(--accent-cyan))", marginLeft: "4px" }}>{projectName.trim()}</strong>
                     </div>
                   )}
 
                   <small style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "2px" }}>
                     {projectName.trim() 
-                      ? "Uploaded leads will be tagged with this project name. You can filter by this project when setting up outreach campaigns."
-                      : "Uploaded leads will be added to your general Leads list. You can assign them to a project or campaign later."}
+                      ? "Uploaded leads will be tagged with this group name. You can filter by this group when setting up outreach campaigns."
+                      : "Uploaded leads will be added to your general Leads list. You can assign them to a group or campaign later."}
                   </small>
                 </div>
 

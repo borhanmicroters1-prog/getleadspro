@@ -130,10 +130,10 @@ export default function NewCampaignPage() {
       const lData = await api.get("/api/leads", params);
       const leadsList = lData.leads || [];
       setAvailableLeads(leadsList);
-      // Auto-select all project leads by default
+      // Auto-select all group leads by default
       setSelectedLeadIds(leadsList.map((l: any) => l.id));
     } catch (err) {
-      console.error("Failed to load project leads:", err);
+      console.error("Failed to load group leads:", err);
     } finally {
       setLoadingLeads(false);
     }
@@ -398,14 +398,14 @@ export default function NewCampaignPage() {
               {/* Leads Selection Panel */}
               <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  <label style={labelStyle}>Select Project Leads</label>
+                  <label style={labelStyle}>Select Group / Campaign Leads</label>
                   <select 
                     value={selectedProject}
                     onChange={(e) => handleProjectChange(e.target.value)}
                     className="input-field"
                     style={{ cursor: "pointer", width: "100%", maxWidth: "400px" }}
                   >
-                    <option value="">-- All Leads (No Project Filter) --</option>
+                    <option value="">-- All Leads (No Group Filter) --</option>
                     {projects.map(proj => (
                       <option key={proj} value={proj}>
                         📁 {proj}
@@ -426,7 +426,7 @@ export default function NewCampaignPage() {
                 {loadingLeads ? (
                   <div style={{ padding: "3rem", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     <div style={spinnerStyle} />
-                    <span style={{ color: "hsl(var(--text-secondary))", fontSize: "0.9rem" }}>Loading project leads...</span>
+                    <span style={{ color: "hsl(var(--text-secondary))", fontSize: "0.9rem" }}>Loading group leads...</span>
                   </div>
                 ) : availableLeads.length > 0 ? (
                   <div style={leadsSelectionContainerStyle} className="input-field">

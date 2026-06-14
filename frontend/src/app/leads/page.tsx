@@ -35,6 +35,8 @@ export default function LeadsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [projects, setProjects] = useState<string[]>([]);
+  const [campaignFilter, setCampaignFilter] = useState("");
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -43,7 +45,7 @@ export default function LeadsPage() {
   // Clear selection on page/filter change
   useEffect(() => {
     setSelectedIds([]);
-  }, [page, searchQuery, sourceFilter, statusFilter]);
+  }, [page, searchQuery, sourceFilter, statusFilter, campaignFilter]);
 
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
@@ -52,6 +54,11 @@ export default function LeadsPage() {
     } else {
       setUser(currentUser);
       setLoading(false);
+
+      // Fetch user projects/groups
+      api.get("/api/leads/projects")
+        .then((data) => setProjects(data || []))
+        .catch((err) => console.error("Error fetching projects:", err));
     }
   }, [router]);
 
@@ -63,6 +70,7 @@ export default function LeadsPage() {
         search: searchQuery,
         source: sourceFilter,
         status_filter: statusFilter,
+        campaign: campaignFilter || undefined,
       });
       setLeads(data.leads || []);
       setTotal(data.total || 0);
@@ -75,7 +83,7 @@ export default function LeadsPage() {
     if (user) {
       fetchLeads();
     }
-  }, [user, page, searchQuery, sourceFilter, statusFilter]);
+  }, [user, page, searchQuery, sourceFilter, statusFilter, campaignFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +140,7 @@ export default function LeadsPage() {
         search: searchQuery,
         source: sourceFilter,
         status_filter: statusFilter,
+        campaign: campaignFilter || undefined,
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -252,6 +261,20 @@ export default function LeadsPage() {
 
             <div style={selectFiltersGroupStyle}>
               <select 
+                value={campaignFilter} 
+                onChange={(e) => { setPage(1); setCampaignFilter(e.target.value); }}
+                className="input-field"
+                style={selectStyle}
+              >
+                <option value="">All Groups</option>
+                {projects.map((proj) => (
+                  <option key={proj} value={proj}>
+                    📁 {proj}
+                  </option>
+                ))}
+              </select>
+
+              <select 
                 value={sourceFilter} 
                 onChange={(e) => { setPage(1); setSourceFilter(e.target.value); }}
                 className="input-field"
@@ -363,7 +386,7 @@ export default function LeadsPage() {
                               {l.source.replace("_", " ")}
                             </span>
                             {l.campaign_name && (
-                              <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))", display: "inline-flex", alignItems: "center", gap: "0.25rem" }} title={`Project: ${l.campaign_name}`}>
+                              <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))", display: "inline-flex", alignItems: "center", gap: "0.25rem" }} title={`Group: ${l.campaign_name}`}>
                                 📁 {l.campaign_name}
                               </span>
                             )}
