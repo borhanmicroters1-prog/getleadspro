@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/utils/api";
 
 interface SystemKeys {
@@ -85,22 +86,23 @@ export default function AdminOverviewPage() {
   if (!stats) return null;
 
   const cards = [
-    { title: "👥 Total Users", value: stats.total_users, desc: "Registered accounts", highlight: false },
-    { title: "⭐ Pro Users", value: stats.pro_users, desc: "Paid Pro tier accounts", highlight: false },
-    { title: "📈 Monthly Revenue (MRR)", value: `৳${stats.system_mrr.toLocaleString()}`, desc: "Starter + Pro subscriptions", highlight: false },
-    { title: "💰 Total Revenue (All-Time)", value: `৳${stats.total_revenue.toLocaleString()}`, desc: "Sum of all paid plans/packs", highlight: true, color: "hsl(var(--success))" },
-    { title: "📤 Sent Emails", value: stats.total_sent.toLocaleString(), desc: "Total outreach emails sent", highlight: false },
-    { title: "🔍 Leads Found", value: stats.total_leads.toLocaleString(), desc: "Scraped Google Maps + Facebook", highlight: false },
-    { title: "🔥 Active Warmup Pool", value: stats.warmup_pool_size, desc: "Accounts currently warming up", highlight: false },
-    { title: "🚀 Active Campaigns", value: stats.active_campaigns, desc: "Outreach campaigns sending now", highlight: false },
+    { title: "👥 Total Users", value: stats.total_users, desc: "Registered accounts", highlight: false, path: "/admin/users" },
+    { title: "⭐ Pro Users", value: stats.pro_users, desc: "Paid Pro tier accounts", highlight: false, path: "/admin/users?plan=Pro" },
+    { title: "📈 Monthly Revenue (MRR)", value: `৳${stats.system_mrr.toLocaleString()}`, desc: "Starter + Pro subscriptions", highlight: false, path: "/admin/revenue" },
+    { title: "💰 Total Revenue (All-Time)", value: `৳${stats.total_revenue.toLocaleString()}`, desc: "Sum of all paid plans/packs", highlight: true, color: "hsl(var(--success))", path: "/admin/revenue" },
+    { title: "📤 Sent Emails", value: stats.total_sent.toLocaleString(), desc: "Total outreach emails sent", highlight: false, path: "/admin/outreach-health" },
+    { title: "🔍 Leads Found", value: stats.total_leads.toLocaleString(), desc: "Scraped Google Maps + Facebook", highlight: false, path: "/admin/reports" },
+    { title: "🔥 Active Warmup Pool", value: stats.warmup_pool_size, desc: "Accounts currently warming up", highlight: false, path: "/admin/warmup" },
+    { title: "🚀 Active Campaigns", value: stats.active_campaigns, desc: "Outreach campaigns sending now", highlight: false, path: "/admin/campaigns-overview" },
     { 
       title: "🎫 Pending Tickets", 
       value: stats.pending_tickets, 
       desc: "Tickets awaiting response", 
       highlight: stats.pending_tickets > 0, 
-      color: "hsl(var(--warning))" 
+      color: "hsl(var(--warning))",
+      path: "/admin/tickets"
     },
-    { title: "🏷️ Promo Code Uses", value: stats.promo_uses, desc: "Discounts claimed in purchases", highlight: false },
+    { title: "🏷️ Promo Code Uses", value: stats.promo_uses, desc: "Discounts claimed in purchases", highlight: false, path: "/admin/promo-codes" },
   ];
 
   return (
@@ -109,17 +111,33 @@ export default function AdminOverviewPage() {
       {/* Stats Cards Grid */}
       <div style={gridStyle}>
         {cards.map((card, i) => (
-          <div key={i} className="glass-panel" style={{
+          <Link key={i} href={card.path} className="glass-panel" style={{
             ...cardStyle,
-            borderLeft: card.highlight ? `4px solid ${card.color || "hsl(var(--accent))"}` : undefined
-          }}>
+            borderLeft: card.highlight ? `4px solid ${card.color || "hsl(var(--accent))"}` : undefined,
+            cursor: "pointer",
+            textDecoration: "none",
+            display: "flex",
+            flexDirection: "column",
+            transition: "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-4px)";
+            e.currentTarget.style.boxShadow = "0 8px 25px rgba(0, 0, 0, 0.08)";
+            e.currentTarget.style.borderColor = card.highlight ? (card.color || "hsl(var(--accent))") : "hsl(var(--accent) / 30%)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow = "none";
+            e.currentTarget.style.borderColor = "var(--glass-border)";
+          }}
+          >
             <span style={cardTitleStyle}>{card.title}</span>
             <span style={{
               ...cardValueStyle,
               color: card.highlight ? card.color : "hsl(var(--text-primary))"
             }}>{card.value}</span>
             <span style={cardDescStyle}>{card.desc}</span>
-          </div>
+          </Link>
         ))}
       </div>
 
