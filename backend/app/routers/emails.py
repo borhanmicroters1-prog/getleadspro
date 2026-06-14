@@ -185,11 +185,11 @@ async def generate_email(
         
         # Resolve model name for VoidAI
         if provider_lower == "claude":
-          model = "claude-3-5-sonnet"
+          model = "claude-sonnet-4-6"
         elif provider_lower == "gemini":
-          model = "gemini-1.5-flash"
+          model = "gemini-3.5-flash"
         else: # chatgpt / default
-          model = "gpt-4o"
+          model = "gpt-4o-mini"
           
         payload = {
           "model": model,
