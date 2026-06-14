@@ -352,3 +352,19 @@ class WarmupLog(Base):
             "health_score": self.health_score,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String(255), primary_key=True)
+    value = Column(String(2000), nullable=True)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "key": self.key,
+            "value": self.value,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+

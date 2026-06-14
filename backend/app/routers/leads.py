@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models import User, Lead, CreditsLog, Blacklist, Campaign, CampaignLead
 from app.utils.auth import get_current_user
 from app.services.scraper import scrape_google_maps_leads, scrape_facebook_ads_leads
+from app.utils.config_resolver import get_system_setting
 
 router = APIRouter(prefix="/api/leads", tags=["Leads"])
 
@@ -47,8 +48,13 @@ async def run_google_maps_scrape_task(
     }
     
     try:
+        # Resolve Google Maps API Key dynamically from database
+        google_api_key = None
+        async with db_sessionmaker() as db:
+            google_api_key = await get_system_setting(db, "GOOGLE_MAPS_API_KEY")
+
         # 1. Run scraping service
-        leads_scraped = await scrape_google_maps_leads(keyword, max_results, extract_emails)
+        leads_scraped = await scrape_google_maps_leads(keyword, max_results, extract_emails, api_key=google_api_key)
         
         active_tasks[task_id]["progress"] = 70
         active_tasks[task_id]["message"] = "Processing results and saving to database..."
@@ -156,7 +162,12 @@ async def run_facebook_ads_scrape_task(
     }
     
     try:
-        leads_scraped = await scrape_facebook_ads_leads(keyword, country, max_results, extract_emails)
+        # Resolve Meta Access Token dynamically from database
+        meta_access_token = None
+        async with db_sessionmaker() as db:
+            meta_access_token = await get_system_setting(db, "META_ACCESS_TOKEN")
+
+        leads_scraped = await scrape_facebook_ads_leads(keyword, country, max_results, extract_emails, api_key=meta_access_token)
         
         active_tasks[task_id]["progress"] = 70
         active_tasks[task_id]["message"] = "Processing results and saving to database..."

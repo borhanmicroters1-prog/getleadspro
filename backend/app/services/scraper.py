@@ -92,18 +92,20 @@ async def crawl_website_for_email(url: str) -> Optional[str]:
 async def scrape_google_maps_leads(
     keyword: str, 
     max_results: int, 
-    extract_emails: bool = True
+    extract_emails: bool = True,
+    api_key: Optional[str] = None
 ) -> List[Dict]:
     leads = []
     
-    if not settings.GOOGLE_MAPS_API_KEY:
+    google_key = api_key or settings.GOOGLE_MAPS_API_KEY
+    if not google_key:
         raise ValueError("Google Maps API Key is not configured.")
         
     # REAL Google Places API Call
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": keyword,
-        "key": settings.GOOGLE_MAPS_API_KEY
+        "key": google_key
     }
     
     async with httpx.AsyncClient() as client:
@@ -128,7 +130,7 @@ async def scrape_google_maps_leads(
                         details_params = {
                             "place_id": place_id,
                             "fields": "formatted_phone_number,website",
-                            "key": settings.GOOGLE_MAPS_API_KEY
+                            "key": google_key
                         }
                         det_res = await client.get(details_url, params=details_params)
                         if det_res.status_code == 200:
@@ -166,11 +168,13 @@ async def scrape_facebook_ads_leads(
     keyword: str, 
     country: str, 
     max_results: int, 
-    extract_emails: bool = True
+    extract_emails: bool = True,
+    api_key: Optional[str] = None
 ) -> List[Dict]:
     leads = []
     
-    if not settings.META_ACCESS_TOKEN:
+    meta_token = api_key or settings.META_ACCESS_TOKEN
+    if not meta_token:
         raise ValueError("Meta Access Token is not configured.")
         
     # REAL Meta Graph Ads Archive API Call
@@ -181,7 +185,7 @@ async def scrape_facebook_ads_leads(
         "ad_active_status": "ACTIVE",
         "fields": "page_id,page_name,ad_creative_link_titles,ad_creative_link_captions",
         "limit": max_results,
-        "access_token": settings.META_ACCESS_TOKEN
+        "access_token": meta_token
     }
     
     async with httpx.AsyncClient() as client:

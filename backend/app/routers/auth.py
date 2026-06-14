@@ -42,6 +42,7 @@ async def get_me(
             user_email == settings.SUPER_ADMIN_EMAIL.strip().lower()
             or user_email == "admin@getleads.com"
             or user_email == "admin@getclient.com"
+            or user_email == "borhan.seoexpert@gmail.com"
         )
         db_user = User(
             id=user_id,

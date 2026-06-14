@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models import User, Lead
 from app.utils.auth import get_current_user
 from app.config import settings
+from app.utils.config_resolver import get_system_setting
 
 router = APIRouter(prefix="/api/emails", tags=["Emails"])
 
@@ -111,23 +112,29 @@ async def generate_email(
 
   provider_lower = request.provider.lower().strip()
 
+  # Resolve system API keys dynamically
+  voidai_api_key = await get_system_setting(db, "VOIDAI_API_KEY")
+  openai_api_key = await get_system_setting(db, "OPENAI_API_KEY")
+  anthropic_api_key = await get_system_setting(db, "ANTHROPIC_API_KEY")
+  gemini_api_key = await get_system_setting(db, "GEMINI_API_KEY")
+
   # Detect VoidAI key (explicit or auto-detected from openai/anthropic variables)
   voidai_key = None
-  if settings.VOIDAI_API_KEY:
-    voidai_key = settings.VOIDAI_API_KEY
-  elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.startswith("sk-voidai"):
-    voidai_key = settings.OPENAI_API_KEY
-  elif settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_API_KEY.startswith("sk-voidai"):
-    voidai_key = settings.ANTHROPIC_API_KEY
+  if voidai_api_key:
+    voidai_key = voidai_api_key
+  elif openai_api_key and openai_api_key.startswith("sk-voidai"):
+    voidai_key = openai_api_key
+  elif anthropic_api_key and anthropic_api_key.startswith("sk-voidai"):
+    voidai_key = anthropic_api_key
 
   # 1. Fallback Mock Checks
   use_mock = False
   if not voidai_key:
-    if provider_lower == "claude" and not settings.ANTHROPIC_API_KEY:
+    if provider_lower == "claude" and not anthropic_api_key:
       use_mock = True
-    elif provider_lower == "chatgpt" and not settings.OPENAI_API_KEY:
+    elif provider_lower == "chatgpt" and not openai_api_key:
       use_mock = True
-    elif provider_lower == "gemini" and not settings.GEMINI_API_KEY:
+    elif provider_lower == "gemini" and not gemini_api_key:
       use_mock = True
 
   if use_mock:
@@ -177,7 +184,7 @@ async def generate_email(
       else:
         if provider_lower == "claude":
           headers = {
-            "x-api-key": settings.ANTHROPIC_API_KEY,
+            "x-api-key": anthropic_api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json"
           }
@@ -193,7 +200,7 @@ async def generate_email(
 
         elif provider_lower == "chatgpt":
           headers = {
-            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+            "Authorization": f"Bearer {openai_api_key}",
             "Content-Type": "application/json"
           }
           payload = {
@@ -206,7 +213,7 @@ async def generate_email(
           result_text = res.json()["choices"][0]["message"]["content"]
 
         elif provider_lower == "gemini":
-          url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+          url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
           headers = {"Content-Type": "application/json"}
           payload = {
             "contents": [{"parts": [{"text": prompt}]}]

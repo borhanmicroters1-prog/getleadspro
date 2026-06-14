@@ -42,6 +42,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: "👥 Users", path: "/admin/users" },
     { name: "🔥 Warmup Pool", path: "/admin/warmup" },
     { name: "💳 Transactions", path: "/admin/transactions" },
+    { name: "⚙️ API Settings", path: "/admin/settings" },
   ];
 
   return (

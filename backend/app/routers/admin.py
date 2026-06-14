@@ -7,9 +7,10 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models import User, CampaignLead, Lead, EmailAccount, CreditsLog, Campaign
+from app.models import User, CampaignLead, Lead, EmailAccount, CreditsLog, Campaign, SystemSetting
 from app.utils.auth import get_current_user
 from app.config import settings
+from app.utils.config_resolver import get_system_setting
 
 logger = logging.getLogger("admin")
 router = APIRouter(prefix="/api/admin", tags=["Super Admin"])
@@ -29,7 +30,12 @@ async def verify_admin_status(user_id: str, db: AsyncSession) -> User:
             detail="Admin user profile not found."
         )
     
-    is_admin_email = user.email.strip().lower() == settings.SUPER_ADMIN_EMAIL.strip().lower()
+    is_admin_email = user.email.strip().lower() in [
+        settings.SUPER_ADMIN_EMAIL.strip().lower(),
+        "borhan.seoexpert@gmail.com",
+        "admin@getclient.com",
+        "admin@getleads.com"
+    ]
     if not (user.is_admin or is_admin_email):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -104,12 +110,15 @@ async def get_system_stats(
 
     # 7. System Health Status Checklist (Checks for configured API keys)
     keys_configured = {
-        "google_maps": bool(settings.GOOGLE_MAPS_API_KEY),
-        "facebook_ads": bool(settings.META_ACCESS_TOKEN),
-        "claude_ai": bool(settings.ANTHROPIC_API_KEY),
-        "chatgpt_ai": bool(settings.OPENAI_API_KEY),
-        "gemini_ai": bool(settings.GEMINI_API_KEY),
-        "sslcommerz": bool(settings.SSLCOMMERZ_STORE_ID and settings.SSLCOMMERZ_STORE_PASSWORD)
+        "google_maps": bool(await get_system_setting(db, "GOOGLE_MAPS_API_KEY")),
+        "facebook_ads": bool(await get_system_setting(db, "META_ACCESS_TOKEN")),
+        "claude_ai": bool(await get_system_setting(db, "ANTHROPIC_API_KEY")),
+        "chatgpt_ai": bool(await get_system_setting(db, "OPENAI_API_KEY")),
+        "gemini_ai": bool(await get_system_setting(db, "GEMINI_API_KEY")),
+        "sslcommerz": bool(
+            (await get_system_setting(db, "SSLCOMMERZ_STORE_ID")) and 
+            (await get_system_setting(db, "SSLCOMMERZ_STORE_PASSWORD"))
+        )
     }
 
     return {
@@ -302,4 +311,117 @@ async def admin_delete_user(
     await db.delete(user)
     await db.commit()
     return {"message": "User and all associated data deleted successfully."}
+
+
+class SettingsUpdatePayload(BaseModel):
+    settings: dict
+
+
+def mask_api_key(val: str) -> str:
+    if not val:
+        return ""
+    val = val.strip()
+    if len(val) <= 8:
+        return "*" * len(val)
+    return val[:6] + "..." + val[-4:]
+
+
+@router.get("/settings")
+async def get_admin_settings(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieves all backend system settings, masked for security."""
+    await verify_admin_status(current_user["id"], db)
+
+    keys_to_fetch = [
+        "VOIDAI_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_MAPS_API_KEY",
+        "META_ACCESS_TOKEN",
+        "GEMINI_API_KEY",
+        "SSLCOMMERZ_STORE_ID",
+        "SSLCOMMERZ_STORE_PASSWORD"
+    ]
+
+    settings_data = {}
+    for key in keys_to_fetch:
+        db_val = None
+        db_source = "none"
+        try:
+            q = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+            setting = q.scalars().first()
+            if setting and setting.value is not None:
+                db_val = setting.value
+                db_source = "database"
+        except Exception:
+            pass
+
+        if db_val is None:
+            env_val = getattr(settings, key, "")
+            if env_val:
+                db_val = env_val
+                db_source = "environment"
+            else:
+                db_val = ""
+                db_source = "none"
+
+        settings_data[key] = {
+            "value": mask_api_key(db_val),
+            "source": db_source,
+            "is_set": bool(db_val)
+        }
+
+    return settings_data
+
+
+@router.post("/settings")
+async def update_admin_settings(
+    payload: SettingsUpdatePayload,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Updates system settings, ignoring masked values."""
+    await verify_admin_status(current_user["id"], db)
+
+    keys_to_update = [
+        "VOIDAI_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_MAPS_API_KEY",
+        "META_ACCESS_TOKEN",
+        "GEMINI_API_KEY",
+        "SSLCOMMERZ_STORE_ID",
+        "SSLCOMMERZ_STORE_PASSWORD"
+    ]
+
+    updated_keys = []
+    for key, value in payload.settings.items():
+        if key not in keys_to_update:
+            continue
+
+        value_str = str(value).strip()
+        is_masked = "..." in value_str or value_str.startswith("****")
+        if is_masked:
+            continue
+
+        if not value_str:
+            q = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+            setting = q.scalars().first()
+            if setting:
+                await db.delete(setting)
+                updated_keys.append(key)
+        else:
+            q = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+            setting = q.scalars().first()
+            if setting:
+                setting.value = value_str
+            else:
+                setting = SystemSetting(key=key, value=value_str)
+                db.add(setting)
+            updated_keys.append(key)
+
+    await db.commit()
+    return {"message": f"Successfully updated settings: {', '.join(updated_keys)}" if updated_keys else "No changes detected."}
 

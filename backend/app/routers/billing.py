@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models import User, CreditsLog
 from app.utils.auth import get_current_user
 from app.config import settings
+from app.utils.config_resolver import get_system_setting
 
 logger = logging.getLogger("billing")
 router = APIRouter(prefix="/api/billing", tags=["Billing"])
@@ -63,8 +64,12 @@ async def checkout_session(
 
     tran_id = f"TXN_{uuid.uuid4().hex[:12].upper()}"
 
+    # Resolve SSLCommerz settings dynamically
+    sslcommerz_store_id = await get_system_setting(db, "SSLCOMMERZ_STORE_ID")
+    sslcommerz_store_passwd = await get_system_setting(db, "SSLCOMMERZ_STORE_PASSWORD")
+
     # If credentials are not set, fall back to mock sandbox page
-    if not settings.SSLCOMMERZ_STORE_ID or not settings.SSLCOMMERZ_STORE_PASSWORD:
+    if not sslcommerz_store_id or not sslcommerz_store_passwd:
         mock_url = (
             f"{settings.BACKEND_URL}/api/billing/mock-gateway"
             f"?tran_id={tran_id}"
@@ -84,8 +89,8 @@ async def checkout_session(
     )
 
     payload = {
-        "store_id": settings.SSLCOMMERZ_STORE_ID,
-        "store_passwd": settings.SSLCOMMERZ_STORE_PASSWORD,
+        "store_id": sslcommerz_store_id,
+        "store_passwd": sslcommerz_store_passwd,
         "total_amount": float(amount),
         "currency": "BDT",
         "tran_id": tran_id,
@@ -147,10 +152,12 @@ async def payment_success_callback(
             if settings.SSLCOMMERZ_IS_SANDBOX
             else "https://securepay.sslcommerz.com/validator/api/validationserverAPI.php"
         )
+        sslcommerz_store_id = await get_system_setting(db, "SSLCOMMERZ_STORE_ID")
+        sslcommerz_store_passwd = await get_system_setting(db, "SSLCOMMERZ_STORE_PASSWORD")
         params = {
             "val_id": val_id,
-            "store_id": settings.SSLCOMMERZ_STORE_ID,
-            "store_passwd": settings.SSLCOMMERZ_STORE_PASSWORD,
+            "store_id": sslcommerz_store_id,
+            "store_passwd": sslcommerz_store_passwd,
             "format": "json"
         }
         try:
