@@ -81,7 +81,37 @@ async def get_system_overview(
     )
     warmup_pool_size = q_pool_count.scalar() or 0
 
-    # 6. Fetch 5 Recent Transactions
+    # 6. Total Revenue (All Time)
+    q_revenue = await db.execute(
+        select(func.sum(PaymentLog.amount)).where(PaymentLog.status == "success")
+    )
+    total_revenue = q_revenue.scalar() or 0.0
+
+    # 7. Active Campaigns
+    q_active_campaigns = await db.execute(
+        select(func.count(Campaign.id)).where(Campaign.status == "active")
+    )
+    active_campaigns = q_active_campaigns.scalar() or 0
+
+    # 8. Pending Support Tickets (Open / In Progress)
+    q_pending_tickets = await db.execute(
+        select(func.count(SupportTicket.id)).where(SupportTicket.status.in_(["open", "in_progress"]))
+    )
+    pending_tickets = q_pending_tickets.scalar() or 0
+
+    # 9. Promo Code Uses (Successful transactions with promo code)
+    q_promo_uses = await db.execute(
+        select(func.count(PaymentLog.id)).where(
+            and_(
+                PaymentLog.status == "success",
+                PaymentLog.promo_code != None,
+                PaymentLog.promo_code != ""
+            )
+        )
+    )
+    promo_uses = q_promo_uses.scalar() or 0
+
+    # 10. Fetch 5 Recent Transactions
     q_txns = await db.execute(
         select(PaymentLog, User)
         .join(User, PaymentLog.user_id == User.id)
@@ -103,7 +133,7 @@ async def get_system_overview(
             "created_at": log.created_at.isoformat()
         })
 
-    # 7. System Health Status Checklist (Checks for configured API keys)
+    # 11. System Health Status Checklist (Checks for configured API keys)
     keys_configured = {
         "google_maps": bool(await get_system_setting(db, "GOOGLE_MAPS_API_KEY")),
         "facebook_ads": bool(await get_system_setting(db, "META_ACCESS_TOKEN")),
@@ -124,6 +154,10 @@ async def get_system_overview(
         "total_sent": total_sent,
         "total_leads": total_leads,
         "warmup_pool_size": warmup_pool_size,
+        "total_revenue": total_revenue,
+        "active_campaigns": active_campaigns,
+        "pending_tickets": pending_tickets,
+        "promo_uses": promo_uses,
         "recent_transactions": recent_transactions,
         "system_keys": keys_configured
     }

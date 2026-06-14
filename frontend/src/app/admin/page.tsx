@@ -32,6 +32,10 @@ interface StatsData {
   total_sent: number;
   total_leads: number;
   warmup_pool_size: number;
+  total_revenue: number;
+  active_campaigns: number;
+  pending_tickets: number;
+  promo_uses: number;
   recent_transactions: RecentTransaction[];
   system_keys: SystemKeys;
 }
@@ -81,12 +85,22 @@ export default function AdminOverviewPage() {
   if (!stats) return null;
 
   const cards = [
-    { title: "👥 Total Users", value: stats.total_users, desc: "Registered accounts" },
-    { title: "⭐ Pro Users", value: stats.pro_users, desc: "Paid Pro tier accounts" },
-    { title: "📈 Monthly Revenue (MRR)", value: `৳${stats.system_mrr.toLocaleString()}`, desc: "Starter + Pro subscriptions" },
-    { title: "📤 Sent Emails", value: stats.total_sent.toLocaleString(), desc: "Total outreach emails sent" },
-    { title: "🔍 Leads Found", value: stats.total_leads.toLocaleString(), desc: "Scraped Google Maps + Facebook" },
-    { title: "🔥 Active Warmup Pool", value: stats.warmup_pool_size, desc: "Accounts currently warming up" },
+    { title: "👥 Total Users", value: stats.total_users, desc: "Registered accounts", highlight: false },
+    { title: "⭐ Pro Users", value: stats.pro_users, desc: "Paid Pro tier accounts", highlight: false },
+    { title: "📈 Monthly Revenue (MRR)", value: `৳${stats.system_mrr.toLocaleString()}`, desc: "Starter + Pro subscriptions", highlight: false },
+    { title: "💰 Total Revenue (All-Time)", value: `৳${stats.total_revenue.toLocaleString()}`, desc: "Sum of all paid plans/packs", highlight: true, color: "hsl(var(--success))" },
+    { title: "📤 Sent Emails", value: stats.total_sent.toLocaleString(), desc: "Total outreach emails sent", highlight: false },
+    { title: "🔍 Leads Found", value: stats.total_leads.toLocaleString(), desc: "Scraped Google Maps + Facebook", highlight: false },
+    { title: "🔥 Active Warmup Pool", value: stats.warmup_pool_size, desc: "Accounts currently warming up", highlight: false },
+    { title: "🚀 Active Campaigns", value: stats.active_campaigns, desc: "Outreach campaigns sending now", highlight: false },
+    { 
+      title: "🎫 Pending Tickets", 
+      value: stats.pending_tickets, 
+      desc: "Tickets awaiting response", 
+      highlight: stats.pending_tickets > 0, 
+      color: "hsl(var(--warning))" 
+    },
+    { title: "🏷️ Promo Code Uses", value: stats.promo_uses, desc: "Discounts claimed in purchases", highlight: false },
   ];
 
   return (
@@ -95,9 +109,15 @@ export default function AdminOverviewPage() {
       {/* Stats Cards Grid */}
       <div style={gridStyle}>
         {cards.map((card, i) => (
-          <div key={i} className="glass-panel" style={cardStyle}>
+          <div key={i} className="glass-panel" style={{
+            ...cardStyle,
+            borderLeft: card.highlight ? `4px solid ${card.color || "hsl(var(--accent))"}` : undefined
+          }}>
             <span style={cardTitleStyle}>{card.title}</span>
-            <span style={cardValueStyle}>{card.value}</span>
+            <span style={{
+              ...cardValueStyle,
+              color: card.highlight ? card.color : "hsl(var(--text-primary))"
+            }}>{card.value}</span>
             <span style={cardDescStyle}>{card.desc}</span>
           </div>
         ))}
