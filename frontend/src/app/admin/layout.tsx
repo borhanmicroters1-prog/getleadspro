@@ -52,44 +52,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Navbar />
         <main className="content-pane animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           
-          {/* Admin Header & Sub Navigation */}
+          {/* Admin Header */}
           <div className="glass-panel" style={adminHeaderStyle}>
             <div style={headerTitleWrapperStyle}>
               <h2 style={titleStyle}>⚙️ Super Admin Control Center</h2>
               <p style={subTitleStyle}>System monitoring, user audits, and credit adjustments</p>
-            </div>
-            
-            {/* Sub-nav Links */}
-            <div style={subNavWrapperStyle}>
-              {subNavItems.map((item) => {
-                const isActive = pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    href={item.path}
-                    style={{
-                      ...subNavItemStyle,
-                      color: isActive ? "hsl(var(--text-primary))" : "hsl(var(--text-secondary))",
-                      backgroundColor: isActive ? "hsl(var(--accent) / 15%)" : "transparent",
-                      borderColor: isActive ? "hsl(var(--accent) / 40%)" : "transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.backgroundColor = "hsl(var(--bg-tertiary))";
-                        e.currentTarget.style.color = "hsl(var(--text-primary))";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.backgroundColor = "transparent";
-                        e.currentTarget.style.color = "hsl(var(--text-secondary))";
-                      }
-                    }}
-                  >
-                    {item.name}
-                  </Link>
-                );
-              })}
             </div>
           </div>
 
