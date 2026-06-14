@@ -2,6 +2,10 @@ import json
 import asyncio
 import urllib.request
 import websockets
+import sys
+import io
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 SERVICE_URL = "https://dashboard.render.com/web/srv-d8mig86rnols73cm2e2g"
 msg_id = 0

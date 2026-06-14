@@ -127,6 +127,24 @@ async def generate_email(
   elif anthropic_api_key and anthropic_api_key.startswith("sk-voidai"):
     voidai_key = anthropic_api_key
 
+  # Auto-switch to available system API key if the selected provider key is not configured
+  if not voidai_key:
+    if provider_lower == "claude" and not anthropic_api_key:
+      if openai_api_key:
+        provider_lower = "chatgpt"
+      elif gemini_api_key:
+        provider_lower = "gemini"
+    elif provider_lower == "chatgpt" and not openai_api_key:
+      if anthropic_api_key:
+        provider_lower = "claude"
+      elif gemini_api_key:
+        provider_lower = "gemini"
+    elif provider_lower == "gemini" and not gemini_api_key:
+      if anthropic_api_key:
+        provider_lower = "claude"
+      elif openai_api_key:
+        provider_lower = "chatgpt"
+
   # 1. Fallback Mock Checks
   use_mock = False
   if not voidai_key:

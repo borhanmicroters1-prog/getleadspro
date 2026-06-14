@@ -504,19 +504,7 @@ export default function NewCampaignPage() {
               <div className="glass-panel" style={{ ...panelStyle, flex: 0.9 }}>
                 <h3 style={panelTitleStyle}>🤖 AI Personalizer Assistant</h3>
                 <div style={aiFormStyle}>
-                  <div style={inputGroupStyle}>
-                    <label style={labelStyle}>AI Model Provider</label>
-                    <select 
-                      value={aiProvider} 
-                      onChange={(e) => setAiProvider(e.target.value)} 
-                      className="input-field"
-                      style={{ cursor: "pointer" }}
-                    >
-                      <option value="claude">Claude 3.5 Sonnet (Anthropic)</option>
-                      <option value="chatgpt">ChatGPT GPT-4o-Mini (OpenAI)</option>
-                      <option value="gemini">Gemini 1.5 Flash (Google)</option>
-                    </select>
-                  </div>
+
 
                   <div style={inputGroupStyle}>
                     <label style={labelStyle}>Personalization Instructions</label>
