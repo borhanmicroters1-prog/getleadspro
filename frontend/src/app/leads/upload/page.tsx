@@ -108,6 +108,10 @@ function CsvUploadContent() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return;
+    if (!projectName.trim()) {
+      setError("Group / Campaign Name is required.");
+      return;
+    }
 
     setIsUploading(true);
     setError("");
@@ -220,7 +224,7 @@ function CsvUploadContent() {
                 {/* Group / Campaign Name Input */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   <label htmlFor="project-name-input" style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
-                    Group / Campaign Name <span style={{ fontSize: "0.8rem", color: "hsl(var(--text-muted))" }}>(Optional)</span>
+                    Group / Campaign Name <span style={{ color: "hsl(var(--danger))" }}>*</span>
                   </label>
                   <div style={{ position: "relative" }}>
                     <input 
@@ -237,6 +241,7 @@ function CsvUploadContent() {
                         fontSize: "0.875rem",
                         borderRadius: "10px"
                       }}
+                      required
                       disabled={isUploading}
                     />
                     <span style={{ 
@@ -263,9 +268,7 @@ function CsvUploadContent() {
                   )}
 
                   <small style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "2px" }}>
-                    {projectName.trim() 
-                      ? "Uploaded leads will be tagged with this group name. You can filter by this group when setting up outreach campaigns."
-                      : "Uploaded leads will be added to your general Leads list. You can assign them to a group or campaign later."}
+                    Uploaded leads will be tagged with this group name. You can filter by this group when setting up outreach campaigns.
                   </small>
                 </div>
 
@@ -273,7 +276,7 @@ function CsvUploadContent() {
                   type="submit" 
                   className="btn btn-primary" 
                   style={{ width: "100%", height: "48px" }}
-                  disabled={isUploading || !file}
+                  disabled={isUploading || !file || !projectName.trim()}
                 >
                   {isUploading ? "Uploading & Processing..." : "Upload & Parse CSV"}
                 </button>
