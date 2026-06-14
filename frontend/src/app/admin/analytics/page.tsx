@@ -286,6 +286,6 @@ const cardTitleStyle: React.CSSProperties = { fontSize: "0.75rem", fontWeight: 7
 const cardValueStyle: React.CSSProperties = { fontSize: "1.5rem", fontWeight: 700, color: "hsl(var(--text-primary))", fontFamily: "var(--font-family-heading)" };
 const cardFooterStyle: React.CSSProperties = { fontSize: "0.75rem", color: "hsl(var(--text-muted))" };
 const chartTitleStyle2: React.CSSProperties = { fontSize: "0.95rem", fontWeight: 700, color: "hsl(var(--text-primary))", borderBottom: "1px solid hsl(var(--border-color) / 30%)", paddingBottom: "0.5rem" };
-const emptyChartStyle: React.CSSProperties = { display: "flex", flex: 1, alignItems: "center", justifyCenter: "center", color: "hsl(var(--text-muted))", fontSize: "0.85rem", minHeight: "150px" };
+const emptyChartStyle: React.CSSProperties = { display: "flex", flex: 1, alignItems: "center", justifyContent: "center", color: "hsl(var(--text-muted))", fontSize: "0.85rem", minHeight: "150px" };
 const thStyle: React.CSSProperties = { padding: "0.6rem 0.5rem", fontSize: "0.75rem", fontWeight: 700, color: "hsl(var(--text-muted))", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left" };
 const tdStyle: React.CSSProperties = { padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "hsl(var(--text-secondary))" };
