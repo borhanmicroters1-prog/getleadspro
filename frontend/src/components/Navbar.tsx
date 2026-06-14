@@ -81,6 +81,7 @@ export default function Navbar() {
     if (pathname === "/campaigns") return "Email Campaigns";
     if (pathname === "/blacklist") return "Outreach Blacklist";
     if (pathname === "/settings") return "Account Settings";
+    if (pathname === "/billing") return "Plan & Billing";
     return "GetLeads";
   };
 
