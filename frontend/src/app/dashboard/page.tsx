@@ -36,8 +36,15 @@ export default function DashboardPage() {
           router.push("/login");
         }
       } else {
-        setUser(currentUser);
-        setLoading(false);
+        const isAdminEmail = currentUser.email?.toLowerCase() === "admin@getleads.com" || 
+                             currentUser.email?.toLowerCase() === "admin@getclient.com" || 
+                             currentUser.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
+        if (currentUser.is_admin || isAdminEmail) {
+          router.push("/admin");
+        } else {
+          setUser(currentUser);
+          setLoading(false);
+        }
       }
     };
 

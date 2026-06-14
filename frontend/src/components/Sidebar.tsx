@@ -30,7 +30,7 @@ export default function Sidebar() {
   const menuItems: MenuItem[] = [
     {
       name: "Dashboard",
-      path: "/dashboard",
+      path: isAdmin ? "/admin" : "/dashboard",
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" style={{ width: "20px", height: "20px" }}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21.75h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21.75h8.25" />
@@ -178,40 +178,6 @@ export default function Sidebar() {
             </Link>
           );
         })}
-        {isAdmin && (
-          <Link 
-            href="/admin"
-            style={{
-              ...navItemStyle,
-              backgroundColor: pathname.startsWith("/admin") ? "hsl(var(--accent) / 0.15)" : "transparent",
-              color: pathname.startsWith("/admin") ? "hsl(var(--text-primary))" : "hsl(var(--text-secondary))",
-              borderColor: pathname.startsWith("/admin") ? "hsl(var(--accent) / 0.4)" : "transparent"
-            }}
-            onMouseEnter={(e) => {
-              if (!pathname.startsWith("/admin")) {
-                e.currentTarget.style.backgroundColor = "hsl(var(--bg-tertiary))";
-                e.currentTarget.style.color = "hsl(var(--text-primary))";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!pathname.startsWith("/admin")) {
-                e.currentTarget.style.backgroundColor = "transparent";
-                e.currentTarget.style.color = "hsl(var(--text-secondary))";
-              }
-            }}
-          >
-            <span style={{ 
-              color: pathname.startsWith("/admin") ? "hsl(var(--accent))" : "hsl(var(--text-muted))",
-              display: "flex", 
-              alignItems: "center" 
-            }}>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" style={{ width: "20px", height: "20px" }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-              </svg>
-            </span>
-            <span>Admin Panel</span>
-          </Link>
-        )}
       </nav>
 
       {/* Logout button */}
