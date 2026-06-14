@@ -396,7 +396,7 @@ const backRowStyle: React.CSSProperties = {
 };
 
 const backBtnStyle: React.CSSProperties = {
-  background: "none",
+  backgroundColor: "transparent",
   border: "none",
   color: "hsl(var(--text-secondary))",
   fontSize: "0.95rem",

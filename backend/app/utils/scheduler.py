@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from sqlalchemy import and_, func
 
 from app.database import async_session_maker
-from app.models import Campaign, CampaignLead, Lead, EmailAccount, User, Blacklist, WarmupLog
+from app.models import Campaign, CampaignLead, Lead, EmailAccount, User, Blacklist, WarmupLog, GlobalBlacklist
 import asyncio
 from app.utils.email_sender import send_email
 from app.utils.telegram import send_telegram_notification
@@ -133,7 +133,11 @@ async def send_emails_job():
                     else:
                         break
 
-                # 5. Blacklist check
+                # 5. Blacklist check (User-level & System-level Global Blacklist)
+                is_blocked = False
+                block_reason = None
+                
+                # Check user-level email block
                 q_blacklist = await db.execute(
                     select(Blacklist).where(
                         and_(
@@ -143,15 +147,27 @@ async def send_emails_job():
                     )
                 )
                 if q_blacklist.scalars().first():
-                    # Lead email is blacklisted
-                    c_lead.status = "unsubscribed"
-                    lead.status = "unsubscribed"
-                    await db.commit()
-                    continue
+                    is_blocked = True
+                    block_reason = "user_blacklist"
+
+                # Check global email block
+                if not is_blocked:
+                    q_g_blacklist = await db.execute(
+                        select(GlobalBlacklist).where(
+                            and_(
+                                GlobalBlacklist.type == "email",
+                                GlobalBlacklist.value == lead.email.lower()
+                            )
+                        )
+                    )
+                    if q_g_blacklist.scalars().first():
+                        is_blocked = True
+                        block_reason = "global_blacklist"
 
                 # Parse domain for blacklist check
                 domain = lead.email.split("@")[-1].lower() if "@" in lead.email else ""
-                if domain:
+                if domain and not is_blocked:
+                    # Check user-level domain block
                     q_blacklist_domain = await db.execute(
                         select(Blacklist).where(
                             and_(
@@ -161,11 +177,29 @@ async def send_emails_job():
                         )
                     )
                     if q_blacklist_domain.scalars().first():
-                        # Domain is blacklisted
-                        c_lead.status = "unsubscribed"
-                        lead.status = "unsubscribed"
-                        await db.commit()
-                        continue
+                        is_blocked = True
+                        block_reason = "user_blacklist_domain"
+
+                    # Check global domain block
+                    if not is_blocked:
+                        q_g_blacklist_domain = await db.execute(
+                            select(GlobalBlacklist).where(
+                                and_(
+                                    GlobalBlacklist.type == "domain",
+                                    GlobalBlacklist.value == domain
+                                )
+                            )
+                        )
+                        if q_g_blacklist_domain.scalars().first():
+                            is_blocked = True
+                            block_reason = "global_blacklist_domain"
+
+                if is_blocked:
+                    c_lead.status = "unsubscribed"
+                    lead.status = "unsubscribed"
+                    logger.info(f"Skipping lead {lead.email} for campaign {campaign.name}: blocked by {block_reason}.")
+                    await db.commit()
+                    continue
 
                 # 6. Compose email details
                 subject = campaign.subject_a
@@ -245,7 +279,11 @@ async def check_follow_ups_job():
                 logger.warning(f"No available active mailbox with capacity for follow-up on lead {lead.email} in campaign {campaign.name}.")
                 continue
 
-            # Blacklist check
+            # Blacklist check (User-level & System-level Global Blacklist)
+            is_blocked = False
+            block_reason = None
+            
+            # Check user-level email block
             q_blacklist = await db.execute(
                 select(Blacklist).where(
                     and_(
@@ -255,8 +293,57 @@ async def check_follow_ups_job():
                 )
             )
             if q_blacklist.scalars().first():
+                is_blocked = True
+                block_reason = "user_blacklist"
+
+            # Check global email block
+            if not is_blocked:
+                q_g_blacklist = await db.execute(
+                    select(GlobalBlacklist).where(
+                        and_(
+                            GlobalBlacklist.type == "email",
+                            GlobalBlacklist.value == lead.email.lower()
+                        )
+                    )
+                )
+                if q_g_blacklist.scalars().first():
+                    is_blocked = True
+                    block_reason = "global_blacklist"
+
+            # Parse domain for blacklist check
+            domain = lead.email.split("@")[-1].lower() if "@" in lead.email else ""
+            if domain and not is_blocked:
+                # Check user-level domain block
+                q_blacklist_domain = await db.execute(
+                    select(Blacklist).where(
+                        and_(
+                            Blacklist.user_id == campaign.user_id,
+                            Blacklist.value == domain
+                        )
+                    )
+                )
+                if q_blacklist_domain.scalars().first():
+                    is_blocked = True
+                    block_reason = "user_blacklist_domain"
+
+                # Check global domain block
+                if not is_blocked:
+                    q_g_blacklist_domain = await db.execute(
+                        select(GlobalBlacklist).where(
+                            and_(
+                                GlobalBlacklist.type == "domain",
+                                GlobalBlacklist.value == domain
+                            )
+                        )
+                    )
+                    if q_g_blacklist_domain.scalars().first():
+                        is_blocked = True
+                        block_reason = "global_blacklist_domain"
+
+            if is_blocked:
                 c_lead.status = "unsubscribed"
                 lead.status = "unsubscribed"
+                logger.info(f"Skipping follow-up for lead {lead.email} in campaign {campaign.name}: blocked by {block_reason}.")
                 await db.commit()
                 continue
 

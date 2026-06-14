@@ -230,6 +230,46 @@ async def generate_email(
           )
 
       parsed = clean_llm_json(result_text)
+
+      # Log AI usage for statistics
+      try:
+          prompt_tokens = 500
+          completion_tokens = 150
+          try:
+              res_json = res.json()
+              if "usage" in res_json:
+                  prompt_tokens = res_json["usage"].get("prompt_tokens", prompt_tokens)
+                  completion_tokens = res_json["usage"].get("completion_tokens", completion_tokens)
+              elif "usageMetadata" in res_json:
+                  prompt_tokens = res_json["usageMetadata"].get("promptTokenCount", prompt_tokens)
+                  completion_tokens = res_json["usageMetadata"].get("candidatesTokenCount", completion_tokens)
+          except Exception:
+              pass
+
+          cost = 0.0
+          if voidai_key:
+              cost = (prompt_tokens * 0.15 + completion_tokens * 0.60) / 1000000.0
+          else:
+              if provider_lower == "claude":
+                  cost = (prompt_tokens * 3.00 + completion_tokens * 15.00) / 1000000.0
+              elif provider_lower == "chatgpt":
+                  cost = (prompt_tokens * 0.15 + completion_tokens * 0.60) / 1000000.0
+              elif provider_lower == "gemini":
+                  cost = (prompt_tokens * 0.075 + completion_tokens * 0.30) / 1000000.0
+
+          from app.models import AILog
+          ai_log = AILog(
+              user_id=current_user["id"],
+              provider="voidai" if voidai_key else provider_lower,
+              model=model if voidai_key else ("claude-3-5-sonnet" if provider_lower == "claude" else ("gpt-4o-mini" if provider_lower == "chatgpt" else "gemini-1.5-flash")),
+              prompt_tokens=prompt_tokens,
+              completion_tokens=completion_tokens,
+              cost=cost
+          )
+          db.add(ai_log)
+      except Exception as log_err:
+          print(f"Failed to log AI call: {log_err}")
+
       return parsed
 
     except Exception as e:

@@ -44,16 +44,45 @@ async def get_me(
             or user_email == "admin@getclient.com"
             or user_email == "borhan.seoexpert@gmail.com"
         )
+        # Load free signup credits dynamically (falls back to 50)
+        free_credits = 50
+        if not is_admin_user:
+            try:
+                from app.models import SystemSetting
+                q_setting = await db.execute(
+                    select(SystemSetting).where(SystemSetting.key == "FREE_SIGNUP_CREDITS")
+                )
+                setting = q_setting.scalars().first()
+                if setting:
+                    free_credits = int(setting.value)
+            except Exception:
+                pass
+
         db_user = User(
             id=user_id,
             email=current_user["email"],
             name=current_user["name"],
             avatar=current_user["avatar"],
             plan="Pro" if is_admin_user else "Free",
-            credits=10000 if is_admin_user else 50,
+            credits=10000 if is_admin_user else free_credits,
             is_admin=is_admin_user
         )
         db.add(db_user)
+        
+        # Log signup action in AuditLog
+        try:
+            from app.models import AuditLog
+            audit_entry = AuditLog(
+                actor_email=current_user["email"],
+                action="signup",
+                target=current_user["email"],
+                details=f"User signed up successfully. Default credits: {10000 if is_admin_user else free_credits}"
+            )
+            db.add(audit_entry)
+        except Exception as e:
+            import logging
+            logging.getLogger("auth").error(f"Failed to log signup audit entry: {str(e)}")
+
         await db.commit()
         await db.refresh(db_user)
         

@@ -54,7 +54,8 @@ async def init_db():
         ("email_accounts", "warmup_enabled", "ALTER TABLE email_accounts ADD COLUMN warmup_enabled BOOLEAN DEFAULT false"),
         ("email_accounts", "warmup_status", "ALTER TABLE email_accounts ADD COLUMN warmup_status VARCHAR(50) DEFAULT 'idle'"),
         ("email_accounts", "warmup_started_at", "ALTER TABLE email_accounts ADD COLUMN warmup_started_at TIMESTAMP"),
-        ("email_accounts", "warmup_health_score", "ALTER TABLE email_accounts ADD COLUMN warmup_health_score INTEGER DEFAULT 100")
+        ("email_accounts", "warmup_health_score", "ALTER TABLE email_accounts ADD COLUMN warmup_health_score INTEGER DEFAULT 100"),
+        ("payment_logs", "promo_code", "ALTER TABLE payment_logs ADD COLUMN promo_code VARCHAR(50)")
     ]
 
     for table, column, sql in migrations:

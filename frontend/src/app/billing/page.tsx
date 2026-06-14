@@ -29,6 +29,13 @@ function BillingContent() {
   const [error, setError] = useState("");
   const [checkoutLoadingId, setCheckoutLoadingId] = useState<string | null>(null);
 
+  // Promo Code States
+  const [promoCode, setPromoCode] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount_type: string; discount_value: number } | null>(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoSuccess, setPromoSuccess] = useState("");
+  const [validatingPromo, setValidatingPromo] = useState(false);
+
   // Sync auth
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
@@ -62,6 +69,37 @@ function BillingContent() {
     }
   }, [user]);
 
+  const handleApplyPromo = async () => {
+    if (!promoCode.trim()) return;
+    try {
+      setValidatingPromo(true);
+      setPromoError("");
+      setPromoSuccess("");
+      
+      const res = await api.get(`/api/billing/promo-codes/validate?code=${encodeURIComponent(promoCode.trim().toUpperCase())}`);
+      setAppliedPromo(res);
+      
+      let msg = "";
+      if (res.discount_type === "percentage") msg = `Promo code applied: ${res.code} (${res.discount_value}% Discount)`;
+      else if (res.discount_type === "fixed") msg = `Promo code applied: ${res.code} (৳${res.discount_value} Discount)`;
+      else msg = `Promo code applied: ${res.code} (+${res.discount_value.toLocaleString()} Bonus Credits)`;
+      
+      setPromoSuccess(msg);
+    } catch (err: any) {
+      setAppliedPromo(null);
+      setPromoError(err.message || "Invalid or expired promo code.");
+    } finally {
+      setValidatingPromo(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromo(null);
+    setPromoCode("");
+    setPromoSuccess("");
+    setPromoError("");
+  };
+
   const handleCheckout = async (itemType: "plan" | "pack", itemId: string) => {
     const btnId = `${itemType}_${itemId}`;
     setCheckoutLoadingId(btnId);
@@ -70,7 +108,8 @@ function BillingContent() {
     try {
       const response = await api.post("/api/billing/checkout", {
         item_type: itemType,
-        item_id: itemId
+        item_id: itemId,
+        promo_code: appliedPromo ? appliedPromo.code : null
       });
 
       if (response && response.GatewayPageURL) {
@@ -83,6 +122,46 @@ function BillingContent() {
       setError(err.message || "Checkout initiation failed. Please try again.");
       setCheckoutLoadingId(null);
     }
+  };
+
+  const getDisplayPrice = (original: number) => {
+    if (!appliedPromo || appliedPromo.discount_type === "credits") return `৳${original.toLocaleString()}`;
+    if (appliedPromo.discount_type === "percentage") {
+      const discounted = original * (1.0 - (appliedPromo.discount_value / 100.0));
+      return (
+        <span>
+          <span style={{ textDecoration: "line-through", color: "hsl(var(--text-muted))", fontSize: "0.55em", marginRight: "0.4rem", fontWeight: 400 }}>
+            ৳{original.toLocaleString()}
+          </span>
+          ৳{discounted.toLocaleString()}
+        </span>
+      );
+    } else if (appliedPromo.discount_type === "fixed") {
+      const discounted = Math.max(0, original - appliedPromo.discount_value);
+      return (
+        <span>
+          <span style={{ textDecoration: "line-through", color: "hsl(var(--text-muted))", fontSize: "0.55em", marginRight: "0.4rem", fontWeight: 400 }}>
+            ৳{original.toLocaleString()}
+          </span>
+          ৳{discounted.toLocaleString()}
+        </span>
+      );
+    }
+    return `৳${original.toLocaleString()}`;
+  };
+
+  const getDisplayCredits = (original: number) => {
+    if (!appliedPromo || appliedPromo.discount_type !== "credits") return original.toLocaleString();
+    const bonus = appliedPromo.discount_value;
+    const total = original + bonus;
+    return (
+      <span>
+        {original.toLocaleString()}
+        <span style={{ color: "hsl(142 71% 45%)", fontSize: "0.85em", marginLeft: "0.4rem", fontWeight: 700 }}>
+          (+{bonus.toLocaleString()} Bonus)
+        </span>
+      </span>
+    );
   };
 
   if (loading || !user) {
@@ -148,6 +227,40 @@ function BillingContent() {
         </div>
       </div>
 
+      {/* Promo Code Coupon Input Panel */}
+      <div className="glass-panel" style={{ padding: "1.25rem 1.75rem" }}>
+        <h3 style={panelTitleStyle}>🎁 Have a Promo Code?</h3>
+        <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+          <input 
+            className="input-field" 
+            placeholder="ENTER COUPON CODE" 
+            value={promoCode} 
+            onChange={e => setPromoCode(e.target.value)} 
+            disabled={appliedPromo !== null || validatingPromo}
+            style={{ width: "240px", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}
+          />
+          {appliedPromo ? (
+            <button className="btn btn-secondary" onClick={handleRemovePromo} style={{ padding: "0.6rem 1.25rem" }}>
+              ❌ Remove Coupon
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={handleApplyPromo} disabled={validatingPromo || !promoCode.trim()} style={{ padding: "0.6rem 1.25rem" }}>
+              {validatingPromo ? "Validating..." : "Apply Coupon"}
+            </button>
+          )}
+        </div>
+        {promoError && (
+          <p style={{ color: "hsl(var(--danger))", fontSize: "0.82rem", marginTop: "0.5rem", fontWeight: 500 }}>
+            ⚠️ {promoError}
+          </p>
+        )}
+        {promoSuccess && (
+          <p style={{ color: "hsl(142 71% 45%)", fontSize: "0.82rem", marginTop: "0.5rem", fontWeight: 600 }}>
+            ✅ {promoSuccess}
+          </p>
+        )}
+      </div>
+
       {/* Subscription Pricing Plans */}
       <div>
         <h3 style={sectionGroupTitleStyle}>Choose a Subscription Plan</h3>
@@ -181,11 +294,11 @@ function BillingContent() {
           <div className="glass-panel" style={user.plan === "Starter" ? { ...pricingCardStyle, border: "2px solid hsl(var(--success) / 30%)" } : pricingCardStyle}>
             <div style={pricingCardHeaderStyle}>
               <span style={pricingCardTitleStyle}>Starter Plan</span>
-              <span style={pricingCardPriceStyle}>৳490 <span style={pricingCardUnitStyle}>/ month</span></span>
+              <span style={pricingCardPriceStyle}>{getDisplayPrice(490)} <span style={pricingCardUnitStyle}>/ month</span></span>
             </div>
             <div style={pricingDividerStyle} />
             <ul style={featuresListStyle}>
-              <li style={featureItemStyle}>✓ <b>2,500</b> credits/leads included</li>
+              <li style={featureItemStyle}>✓ <b>{getDisplayCredits(2500)}</b> leads included</li>
               <li style={featureItemStyle}>✓ Gmail + Brevo email senders</li>
               <li style={featureItemStyle}>✓ 200 emails sending limit / day</li>
               <li style={featureItemStyle}>✓ Claude & GPT Email personalization</li>
@@ -208,11 +321,11 @@ function BillingContent() {
             <div style={{ ...pricingCardHeaderStyle, position: "relative" }}>
               <span style={popularBadgeStyle}>MOST POPULAR</span>
               <span style={pricingCardTitleStyle}>Pro Plan</span>
-              <span style={pricingCardPriceStyle}>৳1,490 <span style={pricingCardUnitStyle}>/ month</span></span>
+              <span style={pricingCardPriceStyle}>{getDisplayPrice(1490)} <span style={pricingCardUnitStyle}>/ month</span></span>
             </div>
             <div style={pricingDividerStyle} />
             <ul style={featuresListStyle}>
-              <li style={featureItemStyle}>✓ <b>10,000</b> credits/leads included</li>
+              <li style={featureItemStyle}>✓ <b>{getDisplayCredits(10000)}</b> leads included</li>
               <li style={featureItemStyle}>✓ Unlimited Gmail & Brevo mailboxes</li>
               <li style={featureItemStyle}>✓ 500 emails sending limit / day</li>
               <li style={featureItemStyle}>✓ AI email template drafts</li>
@@ -243,8 +356,8 @@ function BillingContent() {
           
           {/* Bundle 1 */}
           <div className="glass-panel" style={packCardStyle}>
-            <span style={packCreditsStyle}>🪙 2,500 Credits</span>
-            <span style={packPriceStyle}>৳490</span>
+            <span style={packCreditsStyle}>🪙 {getDisplayCredits(2500)} Credits</span>
+            <span style={packPriceStyle}>{getDisplayPrice(490)}</span>
             <button 
               onClick={() => handleCheckout("pack", "starter")}
               disabled={checkoutLoadingId !== null}
@@ -257,8 +370,8 @@ function BillingContent() {
 
           {/* Bundle 2 */}
           <div className="glass-panel" style={packCardStyle}>
-            <span style={packCreditsStyle}>🪙 10,000 Credits</span>
-            <span style={packPriceStyle}>৳1,490</span>
+            <span style={packCreditsStyle}>🪙 {getDisplayCredits(10000)} Credits</span>
+            <span style={packPriceStyle}>{getDisplayPrice(1490)}</span>
             <button 
               onClick={() => handleCheckout("pack", "pro")}
               disabled={checkoutLoadingId !== null}
@@ -271,8 +384,8 @@ function BillingContent() {
 
           {/* Bundle 3 */}
           <div className="glass-panel" style={packCardStyle}>
-            <span style={packCreditsStyle}>🪙 25,000 Credits</span>
-            <span style={packPriceStyle}>৳2,950</span>
+            <span style={packCreditsStyle}>🪙 {getDisplayCredits(25000)} Credits</span>
+            <span style={packPriceStyle}>{getDisplayPrice(2950)}</span>
             <button 
               onClick={() => handleCheckout("pack", "business")}
               disabled={checkoutLoadingId !== null}

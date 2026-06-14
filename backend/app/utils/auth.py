@@ -49,17 +49,47 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         
         # Verify that sub (user_id) is present
         user_id = payload.get("sub")
-        email = payload.get("email")
+        email = (payload.get("email") or "").strip().lower()
         
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload: missing subject (sub)"
             )
+
+        # Check if maintenance mode is active in database
+        try:
+            from app.database import async_session_maker
+            from app.models import SystemSetting
+            from sqlalchemy.future import select
+
+            async with async_session_maker() as db:
+                q = await db.execute(select(SystemSetting).where(SystemSetting.key == "MAINTENANCE_MODE"))
+                setting = q.scalars().first()
+                if setting and setting.value == "true":
+                    is_admin_user = email in [
+                        "borhan.seoexpert@gmail.com",
+                        "admin@getclient.com",
+                        "admin@getleads.com",
+                        settings.SUPER_ADMIN_EMAIL.strip().lower()
+                    ]
+                    if not is_admin_user:
+                        from app.models import User
+                        uq = await db.execute(select(User).where(User.id == user_id))
+                        db_user = uq.scalars().first()
+                        if not db_user or not db_user.is_admin:
+                            raise HTTPException(
+                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="System is currently under scheduled maintenance. We will be back online shortly."
+                            )
+        except HTTPException:
+            raise
+        except Exception as maint_err:
+            pass
             
         return {
             "id": user_id,
-            "email": email or "",
+            "email": email,
             "name": payload.get("user_metadata", {}).get("name", ""),
             "avatar": payload.get("user_metadata", {}).get("avatar_url", ""),
             "payload": payload

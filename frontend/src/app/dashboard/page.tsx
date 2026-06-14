@@ -19,12 +19,23 @@ interface CampaignItem {
   created_at: string;
 }
 
+interface AnnouncementItem {
+  id: string;
+  title: string;
+  message: string;
+  type: "info" | "warning" | "critical";
+  is_active: boolean;
+  created_at: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [error, setError] = useState("");
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
 
   useEffect(() => {
     const isOAuthCallback = typeof window !== "undefined" && (window.location.hash.includes("access_token=") || window.location.search.includes("code="));
@@ -79,11 +90,37 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchAnnouncements = async () => {
+    try {
+      const data = await api.get("/api/admin/announcements/active");
+      setAnnouncements(data || []);
+    } catch (err) {
+      console.error("Error fetching announcements:", err);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchCampaigns();
+      fetchAnnouncements();
+      if (typeof window !== "undefined") {
+        const dismissed = localStorage.getItem("dismissed_announcements");
+        if (dismissed) {
+          try {
+            setDismissedAnnouncements(JSON.parse(dismissed));
+          } catch (e) {
+            console.error("Failed to parse dismissed announcements:", e);
+          }
+        }
+      }
     }
   }, [user]);
+
+  const dismissAnnouncement = (id: string) => {
+    const next = [...dismissedAnnouncements, id];
+    setDismissedAnnouncements(next);
+    localStorage.setItem("dismissed_announcements", JSON.stringify(next));
+  };
 
   const handleStartCampaign = async (id: string) => {
     try {
@@ -143,6 +180,79 @@ export default function DashboardPage() {
         <Navbar />
 
         <main className="content-pane animate-fade-in" style={mainPaneStyle}>
+          {/* Active System Announcements Banner */}
+          {announcements
+            .filter(a => !dismissedAnnouncements.includes(a.id))
+            .map(ann => {
+              const bg = ann.type === "critical" 
+                ? "hsl(346 84% 50% / 10%)" 
+                : ann.type === "warning" 
+                  ? "hsl(38 92% 50% / 10%)" 
+                  : "hsl(var(--accent) / 8%)";
+              const border = ann.type === "critical" 
+                ? "1px solid hsl(346 84% 50% / 25%)" 
+                : ann.type === "warning" 
+                  ? "1px solid hsl(38 92% 50% / 25%)" 
+                  : "1px solid hsl(var(--accent) / 20%)";
+              const icon = ann.type === "critical" ? "🚨" : ann.type === "warning" ? "⚠️" : "📢";
+              const titleColor = ann.type === "critical" 
+                ? "hsl(346 84% 50%)" 
+                : ann.type === "warning" 
+                  ? "hsl(38 92% 50%)" 
+                  : "hsl(var(--accent))";
+              return (
+                <div key={ann.id} className="glass-panel" style={{
+                  padding: "1rem 1.5rem",
+                  marginBottom: "1.25rem",
+                  backgroundColor: bg,
+                  border: border,
+                  borderRadius: "14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "1.5rem",
+                  position: "relative",
+                  animation: "slide-in 0.3s ease",
+                  borderLeft: `4px solid ${titleColor}`
+                }}>
+                  <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                    <span style={{ fontSize: "1.25rem", flexShrink: 0, marginTop: "2px" }}>{icon}</span>
+                    <div style={{ textAlign: "left" }}>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 700, color: titleColor, marginBottom: "0.2rem" }}>
+                        {ann.title}
+                      </h4>
+                      <p style={{ fontSize: "0.82rem", color: "hsl(var(--text-secondary))", lineHeight: "1.4" }}>
+                        {ann.message}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => dismissAnnouncement(ann.id)} 
+                    style={{
+                      backgroundColor: "transparent",
+                      border: "none",
+                      color: "hsl(var(--text-muted))",
+                      fontSize: "1.1rem",
+                      cursor: "pointer",
+                      padding: "0.25rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "50%",
+                      width: "24px",
+                      height: "24px",
+                      transition: "all 0.2s"
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "hsl(var(--bg-tertiary))"}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                    title="Dismiss"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+
           {/* Welcome Section */}
           <div style={welcomeBannerStyle} className="glass-panel">
             <div style={welcomeTextsStyle}>
@@ -320,6 +430,153 @@ export default function DashboardPage() {
               </table>
             </div>
           </div>
+
+          {/* ── Your Plan & Upgrade Section ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+            
+            {/* Current Plan Card */}
+            <div className="glass-panel" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "hsl(var(--text-muted))", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    YOUR CURRENT PLAN
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: "0.5rem" }}>
+                    <span style={{ fontSize: "1.75rem" }}>
+                      {user.plan === "Pro" ? "🚀" : user.plan === "Starter" ? "⭐" : "🎁"}
+                    </span>
+                    <span style={{ fontSize: "1.75rem", fontWeight: 800, color: "hsl(var(--text-primary))", fontFamily: "var(--font-family-heading)" }}>
+                      {user.plan} Plan
+                    </span>
+                  </div>
+                </div>
+                <span style={{
+                  padding: "0.3rem 0.75rem", borderRadius: "999px", fontSize: "0.7rem", fontWeight: 700,
+                  backgroundColor: user.plan === "Pro" ? "hsl(217 91% 60% / 15%)" : user.plan === "Starter" ? "hsl(38 92% 55% / 15%)" : "hsl(142 71% 45% / 15%)",
+                  color: user.plan === "Pro" ? "hsl(217 91% 60%)" : user.plan === "Starter" ? "hsl(38 92% 55%)" : "hsl(142 71% 45%)",
+                  border: `1px solid ${user.plan === "Pro" ? "hsl(217 91% 60% / 30%)" : user.plan === "Starter" ? "hsl(38 92% 55% / 30%)" : "hsl(142 71% 45% / 30%)"}`,
+                }}>
+                  {user.plan === "Free" ? "FREE TIER" : "ACTIVE"}
+                </span>
+              </div>
+
+              {/* Credits usage bar */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                  <span style={{ fontSize: "0.78rem", color: "hsl(var(--text-muted))" }}>Credits Remaining</span>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "hsl(var(--text-primary))" }}>
+                    🪙 {user.credits.toLocaleString()} / {user.plan === "Pro" ? "10,000" : user.plan === "Starter" ? "2,500" : "50"}
+                  </span>
+                </div>
+                <div style={{ height: "8px", borderRadius: "999px", backgroundColor: "hsl(var(--bg-tertiary))", overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%", borderRadius: "999px", transition: "width 0.8s ease",
+                    width: `${Math.min(100, (user.credits / (user.plan === "Pro" ? 10000 : user.plan === "Starter" ? 2500 : 50)) * 100)}%`,
+                    background: user.credits > 0 ? "linear-gradient(90deg, hsl(142 71% 45%), hsl(160 84% 39%))" : "hsl(0 72% 60%)",
+                    boxShadow: "0 0 10px hsl(142 71% 45% / 40%)",
+                  }} />
+                </div>
+                {user.credits <= 10 && (
+                  <div style={{ marginTop: "0.5rem", fontSize: "0.78rem", color: "hsl(0 72% 60%)", fontWeight: 600 }}>
+                    ⚠️ Credits almost exhausted! Upgrade or buy more credits.
+                  </div>
+                )}
+              </div>
+
+              {/* Plan features summary */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.25rem" }}>
+                {(user.plan === "Pro" ? [
+                  "10,000 credits", "500 emails/day", "AI personalization", "Telegram alerts", "A/B testing"
+                ] : user.plan === "Starter" ? [
+                  "2,500 credits", "200 emails/day", "AI personalization", "Follow-up sequences"
+                ] : [
+                  "50 credits", "50 emails/day", "Gmail outreach"
+                ]).map(feature => (
+                  <span key={feature} style={{
+                    padding: "0.2rem 0.6rem", borderRadius: "999px", fontSize: "0.7rem", fontWeight: 500,
+                    backgroundColor: "hsl(var(--bg-tertiary))", color: "hsl(var(--text-secondary))",
+                    border: "1px solid hsl(var(--border-color))",
+                  }}>
+                    ✓ {feature}
+                  </span>
+                ))}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "auto" }}>
+                {user.plan !== "Pro" && (
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={() => router.push("/billing")}
+                    style={{ flex: 1 }}
+                  >
+                    ⬆️ Upgrade Plan
+                  </button>
+                )}
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => router.push("/billing")}
+                  style={{ flex: 1 }}
+                >
+                  {user.plan === "Pro" ? "🔄 Renew / Buy Credits" : "🪙 Buy Credits"}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Upgrade Comparison */}
+            <div className="glass-panel" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "hsl(var(--text-muted))", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                {user.plan === "Pro" ? "YOUR PLAN BENEFITS" : "UPGRADE TO UNLOCK MORE"}
+              </div>
+
+              {/* Mini plan cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", flex: 1 }}>
+                {[
+                  { name: "Free", icon: "🎁", price: "৳0", credits: "50", daily: "50/day", color: "hsl(142 71% 45%)", active: user.plan === "Free" },
+                  { name: "Starter", icon: "⭐", price: "৳490", credits: "2,500", daily: "200/day", color: "hsl(38 92% 55%)", active: user.plan === "Starter" },
+                  { name: "Pro", icon: "🚀", price: "৳1,490", credits: "10,000", daily: "500/day", color: "hsl(217 91% 60%)", active: user.plan === "Pro" },
+                ].map(plan => (
+                  <div key={plan.name} style={{
+                    padding: "0.85rem 1.25rem", borderRadius: "12px",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    background: plan.active ? `${plan.color}10` : "hsl(var(--bg-tertiary) / 50%)",
+                    border: plan.active ? `2px solid ${plan.color}40` : "1px solid hsl(var(--border-color))",
+                    transition: "all 0.2s ease",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <span style={{ fontSize: "1.25rem" }}>{plan.icon}</span>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "hsl(var(--text-primary))" }}>
+                          {plan.name}
+                          {plan.active && (
+                            <span style={{ marginLeft: "0.5rem", fontSize: "0.65rem", padding: "0.1rem 0.4rem", borderRadius: "999px", backgroundColor: `${plan.color}20`, color: plan.color, fontWeight: 700 }}>
+                              CURRENT
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "hsl(var(--text-muted))" }}>
+                          {plan.credits} credits • {plan.daily}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: 700, fontSize: "1.1rem", color: plan.color }}>{plan.price}</div>
+                      <div style={{ fontSize: "0.65rem", color: "hsl(var(--text-muted))" }}>/month</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button 
+                className="btn btn-primary" 
+                onClick={() => router.push("/billing")}
+                style={{ width: "100%", marginTop: "auto" }}
+              >
+                {user.plan === "Pro" ? "📋 View Billing & History" : "🚀 View All Plans & Upgrade"}
+              </button>
+            </div>
+          </div>
+
         </main>
       </div>
     </div>

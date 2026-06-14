@@ -25,16 +25,21 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://getleadspro.vercel.app",
+        "https://getleads.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
     expose_headers=["*"],
     max_age=600,
 )
 
 # Register routers
-from app.routers import leads, email_accounts, emails, campaigns, blacklist, automation, billing, warmup, analytics, cron, admin
+from app.routers import leads, email_accounts, emails, campaigns, blacklist, automation, billing, warmup, analytics, cron, admin, tickets
 app.include_router(auth.router)
 app.include_router(leads.router)
 app.include_router(email_accounts.router)
@@ -47,6 +52,7 @@ app.include_router(warmup.router)
 app.include_router(analytics.router)
 app.include_router(cron.router)
 app.include_router(admin.router)
+app.include_router(tickets.router)
 
 
 @app.get("/health")

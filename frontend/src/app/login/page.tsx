@@ -448,7 +448,7 @@ const footerTextStyle: React.CSSProperties = {
 };
 
 const toggleButtonStyle: React.CSSProperties = {
-  background: "none",
+  backgroundColor: "transparent",
   border: "none",
   color: "hsl(var(--accent))",
   fontWeight: 600,

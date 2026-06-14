@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/utils/api";
+import { auth } from "@/utils/auth";
 
 interface UserProfile {
   id: string;
@@ -20,14 +22,15 @@ interface UserProfile {
   accounts_count?: number;
 }
 
-export default function AdminUsersPage() {
+function AdminUsersContent() {
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Filters
-  const [searchQuery, setSearchQuery] = useState("");
+  // Filters — pre-fill from URL ?search= (used when clicking email from Transactions page)
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") ?? "");
   const [planFilter, setPlanFilter] = useState("");
 
   // Modal / Editing states
@@ -126,6 +129,54 @@ export default function AdminUsersPage() {
       setError(err.message || "Failed to delete user account.");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleImpersonateUser = async (user: UserProfile) => {
+    if (!confirm(`Are you sure you want to impersonate ${user.email}? You will be logged in as them.`)) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSuccess("");
+
+      const res = await api.post(`/api/admin/users/${user.id}/impersonate`, {});
+      if (res && res.token) {
+        // Save current admin token & session
+        const currentToken = auth.getToken();
+        const currentUser = auth.getCurrentUser();
+
+        if (currentToken && currentUser) {
+          localStorage.setItem("getleads_admin_token", currentToken);
+          localStorage.setItem("getleads_admin_session", JSON.stringify(currentUser));
+        }
+
+        // Log in as target user
+        const targetUserProfile = {
+          id: res.user.id,
+          email: res.user.email,
+          name: res.user.name || res.user.email.split("@")[0],
+          avatar: res.user.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${res.user.id}`,
+          plan: res.user.plan || "Free",
+          credits: res.user.credits || 0,
+          is_admin: res.user.is_admin || false
+        };
+
+        localStorage.setItem("getleads_session", JSON.stringify(targetUserProfile));
+        localStorage.setItem("getleads_token", res.token);
+
+        // Dispatch events to notify listeners (Navbar, etc.)
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new Event("credits_updated"));
+
+        // Redirect to dashboard as the impersonated user
+        window.location.href = "/dashboard";
+      } else {
+        throw new Error("Invalid response from impersonate API.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to impersonate user.");
     }
   };
 
@@ -233,6 +284,20 @@ export default function AdminUsersPage() {
                     <td style={tdStyle}>{new Date(user.created_at).toLocaleDateString()}</td>
                     <td style={{ ...tdStyle, textAlign: "right" }}>
                       <div style={{ display: "inline-flex", gap: "0.5rem" }}>
+                        {user.id !== auth.getCurrentUser()?.id && (
+                          <button
+                            onClick={() => handleImpersonateUser(user)}
+                            className="btn btn-secondary"
+                            style={{ 
+                              padding: "0.4rem 0.8rem", 
+                              fontSize: "0.8rem",
+                              color: "hsl(var(--accent))",
+                              borderColor: "hsl(var(--accent) / 20%)"
+                            }}
+                          >
+                            👥 Impersonate
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenEdit(user)}
                           className="btn btn-secondary"
@@ -562,7 +627,7 @@ const modalTitleStyle: React.CSSProperties = {
 };
 
 const closeBtnStyle: React.CSSProperties = {
-  background: "none",
+  backgroundColor: "transparent",
   border: "none",
   color: "hsl(var(--text-muted))",
   cursor: "pointer",
@@ -619,3 +684,15 @@ const warningTextStyle: React.CSSProperties = {
   color: "hsl(var(--text-primary))",
   lineHeight: 1.4,
 };
+
+export default function AdminUsersPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ padding: "4rem", display: "flex", justifyContent: "center", color: "hsl(var(--text-muted))" }}>
+        Loading users...
+      </div>
+    }>
+      <AdminUsersContent />
+    </Suspense>
+  );
+}

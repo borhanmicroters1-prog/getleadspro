@@ -22,6 +22,11 @@ export default function AdminSettingsPage() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // Maintenance mode state
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(false);
+  const [maintenanceMsg, setMaintenanceMsg] = useState("");
+
   const loadSettings = async () => {
     try {
       setLoading(true);
@@ -42,9 +47,18 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const loadMaintenanceStatus = async () => {
+    try {
+      const res = await api.get("/api/admin/maintenance");
+      setMaintenanceMode(res.maintenance_mode);
+    } catch {}
+  };
+
   useEffect(() => {
     loadSettings();
+    loadMaintenanceStatus();
   }, []);
+
 
   const handleInputChange = (key: string, value: string) => {
     setFormData((prev) => ({
@@ -58,6 +72,21 @@ export default function AdminSettingsPage() {
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const handleToggleMaintenance = async () => {
+    try {
+      setMaintenanceLoading(true);
+      setMaintenanceMsg("");
+      const res = await api.post("/api/admin/maintenance", {});
+      setMaintenanceMode(res.maintenance_mode);
+      setMaintenanceMsg(res.message);
+      setTimeout(() => setMaintenanceMsg(""), 4000);
+    } catch (err: any) {
+      setMaintenanceMsg(err.message || "Failed to toggle maintenance mode.");
+    } finally {
+      setMaintenanceLoading(false);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -148,6 +177,62 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+
+      {/* ── Maintenance Mode Toggle Card ── */}
+      <div className="glass-panel" style={{
+        padding: "1.5rem 2rem",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        flexWrap: "wrap", gap: "1.5rem",
+        border: maintenanceMode ? "1px solid hsl(0 72% 51% / 35%)" : "1px solid hsl(var(--border-color))",
+        background: maintenanceMode ? "hsl(0 72% 51% / 5%)" : undefined,
+      }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <span style={{ fontSize: "1.25rem" }}>🔧</span>
+            <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "hsl(var(--text-primary))" }}>Maintenance Mode</h3>
+            <span style={{
+              padding: "0.15rem 0.55rem", borderRadius: "999px", fontSize: "0.7rem", fontWeight: 700,
+              backgroundColor: maintenanceMode ? "hsl(0 72% 51% / 15%)" : "hsl(142 71% 45% / 15%)",
+              color: maintenanceMode ? "hsl(0 72% 60%)" : "hsl(142 71% 45%)",
+              border: `1px solid ${maintenanceMode ? "hsl(0 72% 51% / 30%)" : "hsl(142 71% 45% / 30%)"}`,
+            }}>
+              {maintenanceMode ? "🔴 ON" : "🟢 OFF"}
+            </span>
+          </div>
+          <p style={{ fontSize: "0.82rem", color: "hsl(var(--text-muted))", maxWidth: "520px", lineHeight: 1.55 }}>
+            When enabled, all regular users see a maintenance page and cannot access the platform. Admins remain unaffected.
+          </p>
+          {maintenanceMsg && (
+            <p style={{ fontSize: "0.8rem", fontWeight: 600, color: maintenanceMode ? "hsl(0 72% 60%)" : "hsl(142 71% 45%)", marginTop: "0.25rem" }}>
+              ✓ {maintenanceMsg}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleToggleMaintenance}
+          disabled={maintenanceLoading}
+          style={{
+            padding: "0.75rem 1.75rem", borderRadius: "12px", fontWeight: 700, fontSize: "0.9rem",
+            cursor: maintenanceLoading ? "not-allowed" : "pointer", border: "none",
+            background: maintenanceMode
+              ? "linear-gradient(135deg, hsl(0 72% 51%), #dc2626)"
+              : "linear-gradient(135deg, #10B981, #059669)",
+            color: "#fff",
+            boxShadow: maintenanceMode ? "0 4px 14px rgba(220,38,38,0.35)" : "0 4px 14px rgba(16,185,129,0.35)",
+            transition: "all 0.2s ease",
+            opacity: maintenanceLoading ? 0.7 : 1,
+            minWidth: "160px",
+          }}
+        >
+          {maintenanceLoading
+            ? "⏳ Toggling..."
+            : maintenanceMode
+            ? "🔓 Disable Maintenance"
+            : "🔧 Enable Maintenance"}
+        </button>
+      </div>
+
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         
         {error && (
@@ -415,7 +500,7 @@ const inputFieldStyle: React.CSSProperties = {
 const visibilityToggleStyle: React.CSSProperties = {
   position: "absolute",
   right: "0.5rem",
-  background: "none",
+  backgroundColor: "transparent",
   border: "none",
   cursor: "pointer",
   padding: "0.25rem",

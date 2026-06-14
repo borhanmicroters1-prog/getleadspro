@@ -10,6 +10,8 @@ export default function Navbar() {
   const { theme, toggleTheme } = useTheme();
   const [credits, setCredits] = useState(50);
   const [maxCredits, setMaxCredits] = useState(50);
+  const [isImpersonating, setIsImpersonating] = useState(false);
+  const [impersonatedEmail, setImpersonatedEmail] = useState("");
 
   useEffect(() => {
     const updateCredits = () => {
@@ -20,16 +22,53 @@ export default function Navbar() {
       }
     };
 
+    const checkImpersonation = () => {
+      if (typeof window !== "undefined") {
+        const adminToken = localStorage.getItem("getleads_admin_token");
+        const user = auth.getCurrentUser();
+        if (adminToken && user) {
+          setIsImpersonating(true);
+          setImpersonatedEmail(user.email);
+        } else {
+          setIsImpersonating(false);
+          setImpersonatedEmail("");
+        }
+      }
+    };
+
     updateCredits();
+    checkImpersonation();
 
     window.addEventListener("storage", updateCredits);
+    window.addEventListener("storage", checkImpersonation);
     window.addEventListener("credits_updated", updateCredits);
 
     return () => {
       window.removeEventListener("storage", updateCredits);
+      window.removeEventListener("storage", checkImpersonation);
       window.removeEventListener("credits_updated", updateCredits);
     };
   }, []);
+
+  const handleExitImpersonation = () => {
+    if (typeof window !== "undefined") {
+      const adminToken = localStorage.getItem("getleads_admin_token");
+      const adminSession = localStorage.getItem("getleads_admin_session");
+      
+      if (adminToken && adminSession) {
+        localStorage.setItem("getleads_token", adminToken);
+        localStorage.setItem("getleads_session", adminSession);
+        
+        localStorage.removeItem("getleads_admin_token");
+        localStorage.removeItem("getleads_admin_session");
+        
+        window.dispatchEvent(new Event("storage"));
+        window.dispatchEvent(new Event("credits_updated"));
+        
+        window.location.href = "/admin/users";
+      }
+    }
+  };
 
   // Format page title from pathname
   const getPageTitle = () => {
@@ -49,6 +88,16 @@ export default function Navbar() {
     <header style={navbarStyle} className="glass-panel">
       {/* Title */}
       <h1 style={titleStyle}>{getPageTitle()}</h1>
+
+      {/* Impersonation Indicator Pill */}
+      {isImpersonating && (
+        <div style={impersonationPillStyle}>
+          <span>⚠️ Impersonating: <strong style={{ color: "#fff" }}>{impersonatedEmail}</strong></span>
+          <button onClick={handleExitImpersonation} style={exitBtnStyle}>
+            Exit
+          </button>
+        </div>
+      )}
 
       {/* Utilities */}
       <div style={utilityWrapperStyle}>
@@ -190,4 +239,35 @@ const dotStyle: React.CSSProperties = {
 const healthTextStyle: React.CSSProperties = {
   color: "rgb(16, 185, 129)",
   fontWeight: 500,
+};
+
+const impersonationPillStyle: React.CSSProperties = {
+  position: "fixed",
+  top: "16px",
+  left: "calc(50% + var(--sidebar-width) / 2)",
+  transform: "translateX(-50%)",
+  backgroundColor: "rgba(224, 86, 36, 0.95)",
+  color: "#fff",
+  padding: "0.4rem 0.8rem",
+  borderRadius: "30px",
+  display: "flex",
+  alignItems: "center",
+  gap: "0.6rem",
+  fontSize: "0.8rem",
+  fontWeight: 600,
+  zIndex: 9999,
+  boxShadow: "0 4px 12px rgba(224, 86, 36, 0.35)",
+  border: "1px solid rgba(255, 255, 255, 0.15)",
+};
+
+const exitBtnStyle: React.CSSProperties = {
+  backgroundColor: "rgba(0, 0, 0, 0.6)",
+  color: "#fff",
+  border: "1px solid rgba(255, 255, 255, 0.2)",
+  borderRadius: "20px",
+  padding: "0.15rem 0.6rem",
+  fontSize: "0.75rem",
+  cursor: "pointer",
+  fontWeight: "bold",
+  transition: "background-color 0.2s ease",
 };

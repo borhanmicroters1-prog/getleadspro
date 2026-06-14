@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { auth } from "@/utils/auth";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
-import Link from "next/link";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [authorized, setAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -18,7 +16,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!user) {
       router.push("/login");
     } else {
-      const isAdminEmail = user.email?.toLowerCase() === "admin@getleads.com" || user.email?.toLowerCase() === "admin@getclient.com" || user.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
+      const isAdminEmail =
+        user.email?.toLowerCase() === "admin@getleads.com" ||
+        user.email?.toLowerCase() === "admin@getclient.com" ||
+        user.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
       if (!user.is_admin && !isAdminEmail) {
         router.push("/dashboard");
       } else {
@@ -37,31 +38,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  const subNavItems = [
-    { name: "📊 Overview", path: "/admin" },
-    { name: "👥 Users", path: "/admin/users" },
-    { name: "🔥 Warmup Pool", path: "/admin/warmup" },
-    { name: "💳 Transactions", path: "/admin/transactions" },
-    { name: "⚙️ API Settings", path: "/admin/settings" },
-  ];
-
   return (
     <div className="app-shell">
       <Sidebar />
       <div className="main-content">
         <Navbar />
         <main className="content-pane animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          
-          {/* Admin Header */}
-          <div className="glass-panel" style={adminHeaderStyle}>
-            <div style={headerTitleWrapperStyle}>
-              <h2 style={titleStyle}>⚙️ Super Admin Control Center</h2>
-              <p style={subTitleStyle}>System monitoring, user audits, and credit adjustments</p>
-            </div>
-          </div>
-
           {children}
-
         </main>
       </div>
     </div>
@@ -87,44 +70,4 @@ const spinnerStyle: React.CSSProperties = {
   borderTopColor: "hsl(var(--accent))",
   borderRadius: "50%",
   animation: "spin 1s linear infinite",
-};
-
-const adminHeaderStyle: React.CSSProperties = {
-  padding: "1.5rem 2rem",
-  display: "flex",
-  flexDirection: "column",
-  gap: "1.25rem",
-};
-
-const headerTitleWrapperStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "0.25rem",
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: "1.5rem",
-  color: "hsl(var(--text-primary))",
-};
-
-const subTitleStyle: React.CSSProperties = {
-  fontSize: "0.9rem",
-  color: "hsl(var(--text-muted))",
-};
-
-const subNavWrapperStyle: React.CSSProperties = {
-  display: "flex",
-  gap: "0.5rem",
-  flexWrap: "wrap",
-  borderTop: "1px solid hsl(var(--border-color))",
-  paddingTop: "1rem",
-};
-
-const subNavItemStyle: React.CSSProperties = {
-  padding: "0.5rem 1rem",
-  borderRadius: "8px",
-  fontSize: "0.85rem",
-  fontWeight: 500,
-  border: "1px solid transparent",
-  transition: "all 0.2s ease",
 };

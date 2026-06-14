@@ -387,3 +387,24 @@ a {
 [data-theme="light"] .theme-toggle-btn:hover svg {
   transform: rotate(-30deg);
 }
+
+/* ========================================
+   SIDEBAR NAV SCROLLBAR
+   ======================================== */
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-color));
+  border-radius: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+

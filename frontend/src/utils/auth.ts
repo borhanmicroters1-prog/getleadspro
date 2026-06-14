@@ -17,7 +17,30 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 export const supabase = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        // Retry failed token refreshes with exponential backoff
+        storageKey: "getleads_sb_session",
+      },
+      global: {
+        // Suppress network errors from Supabase internal fetch
+        fetch: (url: RequestInfo | URL, init?: RequestInit) => {
+          return fetch(url, init).catch((err) => {
+            // Silently ignore network errors from Supabase auth refreshes
+            // These happen when the browser is offline or tab is backgrounded
+            console.warn("[Supabase] Network request failed (will retry):", typeof url === "string" ? url.split("?")[0] : url);
+            // Return a fake 503 response to let Supabase handle retry logic
+            return new Response(JSON.stringify({ error: "network_error", message: "Network unavailable" }), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            });
+          });
+        },
+      },
+    })
   : null;
 
 // Synchronize Supabase authentication state with local storage
@@ -52,12 +75,12 @@ if (typeof window !== "undefined" && supabase) {
           userProfile.is_admin = dbUser.is_admin !== undefined ? dbUser.is_admin : userProfile.is_admin;
         }
       } catch (e) {
-        console.error("Failed to sync auth profile with backend database:", e);
+        // Non-fatal: backend sync failed, continue with Supabase profile data
       }
       
       localStorage.setItem(STORAGE_KEY, JSON.stringify(userProfile));
       localStorage.setItem(TOKEN_KEY, session.access_token);
-    } else {
+    } else if (event === "SIGNED_OUT") {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(TOKEN_KEY);
     }

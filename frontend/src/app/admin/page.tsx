@@ -15,10 +15,12 @@ interface SystemKeys {
 interface RecentTransaction {
   id: string;
   user_email: string;
-  action: string;
-  credits_credited: number;
-  amount_bdt: number;
-  reference: string;
+  tran_id: string;
+  amount: number;
+  item_type: string;
+  item_id: string;
+  status: string;
+  error_reason?: string;
   created_at: string;
 }
 
@@ -43,7 +45,7 @@ export default function AdminOverviewPage() {
     try {
       setLoading(true);
       setError("");
-      const data = await api.get("/api/admin/stats");
+      const data = await api.get("/api/admin/overview");
       setStats(data);
     } catch (err: any) {
       setError(err.message || "Failed to load system stats.");
@@ -156,8 +158,8 @@ export default function AdminOverviewPage() {
 
         {/* Recent purchases */}
         <div className="glass-panel" style={{ ...panelStyle, flex: 2 }}>
-          <h3 style={panelTitleStyle}>💳 Recent Purchases</h3>
-          <p style={panelDescStyle}>Last 5 successful transactions across the platform</p>
+          <h3 style={panelTitleStyle}>💳 Recent Purchases & Attempts</h3>
+          <p style={panelDescStyle}>Last 5 payment transactions across the platform</p>
 
           {stats.recent_transactions.length === 0 ? (
             <div style={noDataStyle}>No purchases found yet.</div>
@@ -167,9 +169,10 @@ export default function AdminOverviewPage() {
                 <thead>
                   <tr style={thRowStyle}>
                     <th style={thStyle}>User Email</th>
-                    <th style={thStyle}>Credits</th>
+                    <th style={thStyle}>Product / Item</th>
                     <th style={thStyle}>Amount</th>
-                    <th style={thStyle}>Reference</th>
+                    <th style={thStyle}>Reference ID</th>
+                    <th style={thStyle}>Status</th>
                     <th style={thStyle}>Date</th>
                   </tr>
                 </thead>
@@ -177,9 +180,27 @@ export default function AdminOverviewPage() {
                   {stats.recent_transactions.map((txn) => (
                     <tr key={txn.id} style={trStyle}>
                       <td style={tdStyle}>{txn.user_email}</td>
-                      <td style={tdStyle}>🪙 {txn.credits_credited.toLocaleString()}</td>
-                      <td style={tdStyle}>৳{txn.amount_bdt.toLocaleString()}</td>
-                      <td style={tdStyle}>{txn.reference || "N/A"}</td>
+                      <td style={tdStyle}>
+                        <span style={{ textTransform: "capitalize" }}>
+                          {txn.item_id} {txn.item_type}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>৳{txn.amount.toLocaleString()} BDT</td>
+                      <td style={tdStyle}>
+                        <code style={{ fontFamily: "monospace", fontSize: "0.8rem", color: "hsl(var(--accent-cyan))" }}>
+                          {txn.tran_id}
+                        </code>
+                      </td>
+                      <td style={tdStyle}>
+                        <span className={`badge ${
+                          txn.status === "success" ? "badge-success" : 
+                          txn.status === "failed" ? "badge-danger" : 
+                          txn.status === "cancelled" ? "badge-warning" : 
+                          "badge-secondary"
+                        }`}>
+                          {txn.status}
+                        </span>
+                      </td>
                       <td style={tdStyle}>{new Date(txn.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}

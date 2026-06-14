@@ -62,6 +62,7 @@ class User(Base):
     blacklist_items = relationship("Blacklist", back_populates="user", cascade="all, delete-orphan")
     email_accounts = relationship("EmailAccount", back_populates="user", cascade="all, delete-orphan")
     campaigns = relationship("Campaign", back_populates="user", cascade="all, delete-orphan")
+    support_tickets = relationship("SupportTicket", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -366,5 +367,206 @@ class SystemSetting(Base):
             "key": self.key,
             "value": self.value,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AILog(Base):
+    __tablename__ = "ai_logs"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    provider = Column(String(50), nullable=False)  # voidai, openai, anthropic, gemini
+    model = Column(String(50), nullable=False)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    cost = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "provider": self.provider,
+            "model": self.model,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "cost": self.cost,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PaymentLog(Base):
+    __tablename__ = "payment_logs"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tran_id = Column(String(100), unique=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    item_type = Column(String(50), nullable=False)  # plan, pack
+    item_id = Column(String(50), nullable=False)    # starter, pro, business
+    status = Column(String(50), nullable=False)     # initiated, success, failed, cancelled
+    error_reason = Column(String(500), nullable=True)
+    promo_code = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    user = relationship("User")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "tran_id": self.tran_id,
+            "amount": self.amount,
+            "item_type": self.item_type,
+            "item_id": self.item_id,
+            "status": self.status,
+            "error_reason": self.error_reason,
+            "promo_code": self.promo_code,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = Column(String(255), nullable=False)
+    message = Column(String(2000), nullable=False)
+    type = Column(String(30), nullable=False, default="info")  # info, warning, critical
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "message": self.message,
+            "type": self.type,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    actor_email = Column(String(255), nullable=False)
+    action = Column(String(100), nullable=False)       # user_login, impersonate, settings_change, maintenance_toggle, etc.
+    target = Column(String(255), nullable=True)         # affected resource/user
+    details = Column(String(2000), nullable=True)       # extra context
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "actor_email": self.actor_email,
+            "action": self.action,
+            "target": self.target,
+            "details": self.details,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PromoCode(Base):
+    __tablename__ = "promo_codes"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    code = Column(String(50), unique=True, nullable=False)
+    discount_type = Column(String(30), nullable=False, default="percentage")  # percentage, fixed, credits
+    discount_value = Column(Float, nullable=False)
+    max_uses = Column(Integer, nullable=True)  # None = unlimited
+    uses_count = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    expiry_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "discount_type": self.discount_type,
+            "discount_value": self.discount_value,
+            "max_uses": self.max_uses,
+            "uses_count": self.uses_count,
+            "is_active": self.is_active,
+            "expiry_at": self.expiry_at.isoformat() if self.expiry_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class GlobalBlacklist(Base):
+    __tablename__ = "global_blacklist"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    type = Column(String(50), nullable=False)  # email, domain
+    value = Column(String(255), unique=True, nullable=False)
+    reason = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "type": self.type,
+            "value": self.value,
+            "reason": self.reason,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    description = Column(String(2000), nullable=False)
+    status = Column(String(50), default="open", nullable=False)       # open, in_progress, resolved, closed
+    priority = Column(String(30), default="medium", nullable=False)    # low, medium, high
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="support_tickets")
+    replies = relationship("TicketReply", back_populates="ticket", cascade="all, delete-orphan", order_by="TicketReply.created_at")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "priority": self.priority,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class TicketReply(Base):
+    __tablename__ = "ticket_replies"
+
+    id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    ticket_id = Column(GUID, ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False)
+    sender_email = Column(String(255), nullable=False)
+    is_admin_reply = Column(Boolean, default=False, nullable=False)
+    message = Column(String(2000), nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    # Relationships
+    ticket = relationship("SupportTicket", back_populates="replies")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "ticket_id": self.ticket_id,
+            "sender_email": self.sender_email,
+            "is_admin_reply": self.is_admin_reply,
+            "message": self.message,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

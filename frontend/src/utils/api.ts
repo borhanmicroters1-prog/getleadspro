@@ -1,4 +1,4 @@
-import { auth } from "./auth";
+import { auth, supabase } from "./auth";
 
 // In production, use same-origin proxy to avoid CORS issues.
 // In development, call backend directly.
@@ -11,6 +11,21 @@ interface RequestOptions {
   headers?: Record<string, string>;
   isMultipart?: boolean;
   isBlob?: boolean;
+  _isRetry?: boolean; // Internal flag to prevent infinite retry loops
+}
+
+/** Attempts to refresh the Supabase session and update localStorage token. */
+async function tryRefreshToken(): Promise<string | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error || !data.session) return null;
+    // Update token in localStorage immediately so the retry picks it up
+    localStorage.setItem("getleads_token", data.session.access_token);
+    return data.session.access_token;
+  } catch {
+    return null;
+  }
 }
 
 async function request(endpoint: string, options: RequestOptions = {}) {
@@ -39,6 +54,21 @@ async function request(endpoint: string, options: RequestOptions = {}) {
   }
 
   const response = await fetch(url, fetchOptions);
+
+  // Handle 401 — try to refresh the token once and retry
+  if (response.status === 401 && !options._isRetry) {
+    const newToken = await tryRefreshToken();
+    if (newToken) {
+      // Retry the same request with the fresh token
+      return request(endpoint, { ...options, _isRetry: true });
+    }
+    // Refresh failed — force logout and redirect to login
+    if (typeof window !== "undefined") {
+      auth.logout().catch(() => {});
+      window.location.href = "/login";
+    }
+    throw new Error("Token has expired. Please log in again.");
+  }
 
   if (!response.ok) {
     let errorDetail = "An error occurred";
