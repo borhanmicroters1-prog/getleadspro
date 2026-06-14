@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    VOIDAI_API_KEY: str = ""
 
     # SSLCommerz Configuration
     SSLCOMMERZ_STORE_ID: str = ""

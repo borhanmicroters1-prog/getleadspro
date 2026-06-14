@@ -111,14 +111,24 @@ async def generate_email(
 
   provider_lower = request.provider.lower().strip()
 
+  # Detect VoidAI key (explicit or auto-detected from openai/anthropic variables)
+  voidai_key = None
+  if settings.VOIDAI_API_KEY:
+    voidai_key = settings.VOIDAI_API_KEY
+  elif settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.startswith("sk-voidai"):
+    voidai_key = settings.OPENAI_API_KEY
+  elif settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_API_KEY.startswith("sk-voidai"):
+    voidai_key = settings.ANTHROPIC_API_KEY
+
   # 1. Fallback Mock Checks
   use_mock = False
-  if provider_lower == "claude" and not settings.ANTHROPIC_API_KEY:
-    use_mock = True
-  elif provider_lower == "chatgpt" and not settings.OPENAI_API_KEY:
-    use_mock = True
-  elif provider_lower == "gemini" and not settings.GEMINI_API_KEY:
-    use_mock = True
+  if not voidai_key:
+    if provider_lower == "claude" and not settings.ANTHROPIC_API_KEY:
+      use_mock = True
+    elif provider_lower == "chatgpt" and not settings.OPENAI_API_KEY:
+      use_mock = True
+    elif provider_lower == "gemini" and not settings.GEMINI_API_KEY:
+      use_mock = True
 
   if use_mock:
     return generate_mock_email(lead_name, company_name, rating, provider_lower)
@@ -142,52 +152,75 @@ async def generate_email(
   # Execute API requests via HTTPX
   async with httpx.AsyncClient() as client:
     try:
-      if provider_lower == "claude":
+      if voidai_key:
         headers = {
-          "x-api-key": settings.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json"
-        }
-        payload = {
-          "model": "claude-3-5-sonnet-20241022",
-          "max_tokens": 600,
-          "messages": [{"role": "user", "content": prompt}]
-        }
-        res = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=20.0)
-        if res.status_code != 200:
-          raise Exception(res.text)
-        result_text = res.json()["content"][0]["text"]
-
-      elif provider_lower == "chatgpt":
-        headers = {
-          "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+          "Authorization": f"Bearer {voidai_key}",
           "Content-Type": "application/json"
         }
+        
+        # Resolve model name for VoidAI
+        if provider_lower == "claude":
+          model = "claude-3-5-sonnet"
+        elif provider_lower == "gemini":
+          model = "gemini-1.5-flash"
+        else: # chatgpt / default
+          model = "gpt-4o"
+          
         payload = {
-          "model": "gpt-4o-mini",
+          "model": model,
           "messages": [{"role": "user", "content": prompt}]
         }
-        res = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
+        res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
         if res.status_code != 200:
           raise Exception(res.text)
         result_text = res.json()["choices"][0]["message"]["content"]
-
-      elif provider_lower == "gemini":
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-          "contents": [{"parts": [{"text": prompt}]}]
-        }
-        res = await client.post(url, headers=headers, json=payload, timeout=20.0)
-        if res.status_code != 200:
-          raise Exception(res.text)
-        result_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-
       else:
-        raise HTTPException(
-          status_code=status.HTTP_400_BAD_REQUEST,
-          detail=f"Unsupported AI provider: {request.provider}. Choose 'claude', 'chatgpt', or 'gemini'."
-        )
+        if provider_lower == "claude":
+          headers = {
+            "x-api-key": settings.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          }
+          payload = {
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 600,
+            "messages": [{"role": "user", "content": prompt}]
+          }
+          res = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=20.0)
+          if res.status_code != 200:
+            raise Exception(res.text)
+          result_text = res.json()["content"][0]["text"]
+
+        elif provider_lower == "chatgpt":
+          headers = {
+            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+          }
+          payload = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": prompt}]
+          }
+          res = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
+          if res.status_code != 200:
+            raise Exception(res.text)
+          result_text = res.json()["choices"][0]["message"]["content"]
+
+        elif provider_lower == "gemini":
+          url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+          headers = {"Content-Type": "application/json"}
+          payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+          }
+          res = await client.post(url, headers=headers, json=payload, timeout=20.0)
+          if res.status_code != 200:
+            raise Exception(res.text)
+          result_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+        else:
+          raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported AI provider: {request.provider}. Choose 'claude', 'chatgpt', or 'gemini'."
+          )
 
       parsed = clean_llm_json(result_text)
       return parsed
