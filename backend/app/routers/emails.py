@@ -196,6 +196,21 @@ async def generate_email(
           "messages": [{"role": "user", "content": prompt}]
         }
         res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
+        
+        # Fallback to gpt-4o-mini if the current model is not accessible under user's plan
+        if res.status_code == 400 and model != "gpt-4o-mini":
+          try:
+            res_json = res.json()
+            err_code = res_json.get("error", {}).get("code", "")
+            err_msg = res_json.get("error", {}).get("message", "")
+            if err_code == "invalid_model" or "does not have access to model" in err_msg.lower():
+              print(f"VoidAI model '{model}' is not accessible on user plan. Falling back to 'gpt-4o-mini'...")
+              model = "gpt-4o-mini"
+              payload["model"] = model
+              res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
+          except Exception as parse_err:
+            print(f"Error parsing error response for fallback: {parse_err}")
+
         if res.status_code != 200:
           raise Exception(res.text)
         result_text = res.json()["choices"][0]["message"]["content"]
