@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api } from "@/utils/api";
 
 interface SystemKeys {
+  voidai: boolean;
   google_maps: boolean;
   facebook_ads: boolean;
   claude_ai: boolean;
@@ -150,6 +151,13 @@ export default function AdminOverviewPage() {
           <p style={panelDescStyle}>Checklist of backend API configurations</p>
           
           <div style={checklistStyle}>
+            <div style={checkRowStyle}>
+              <span style={checkLabelStyle}>🧠 VoidAI API Key</span>
+              <span className={`badge ${stats.system_keys.voidai ? "badge-success" : "badge-danger"}`}>
+                {stats.system_keys.voidai ? "Active" : "Missing"}
+              </span>
+            </div>
+
             <div style={checkRowStyle}>
               <span style={checkLabelStyle}>📍 Google Maps Scraping API</span>
               <span className={`badge ${stats.system_keys.google_maps ? "badge-success" : "badge-danger"}`}>

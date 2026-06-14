@@ -135,6 +135,7 @@ async def get_system_overview(
 
     # 11. System Health Status Checklist (Checks for configured API keys)
     keys_configured = {
+        "voidai": bool(await get_system_setting(db, "VOIDAI_API_KEY")),
         "google_maps": bool(await get_system_setting(db, "GOOGLE_MAPS_API_KEY")),
         "facebook_ads": bool(await get_system_setting(db, "META_ACCESS_TOKEN")),
         "claude_ai": bool(await get_system_setting(db, "ANTHROPIC_API_KEY")),
