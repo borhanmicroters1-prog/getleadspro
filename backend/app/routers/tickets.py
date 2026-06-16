@@ -133,8 +133,8 @@ async def reply_to_ticket(
     )
     db.add(reply)
     
-    # Update ticket status back to open if closed
-    if ticket.status in ["closed", "resolved"]:
+    # Update ticket status back to open if not already open
+    if ticket.status != "open":
         ticket.status = "open"
         
     await db.commit()

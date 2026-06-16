@@ -1410,6 +1410,19 @@ class TicketStatusUpdate(BaseModel):
 class TicketReplyAdminCreate(BaseModel):
     message: str
 
+@router.get("/tickets/pending-count")
+async def get_pending_tickets_count(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get count of open support tickets that need admin attention."""
+    await verify_admin_status(current_user["id"], db)
+    q = await db.execute(
+        select(func.count(SupportTicket.id)).where(SupportTicket.status == "open")
+    )
+    count = q.scalar() or 0
+    return {"pending_count": count}
+
 @router.get("/tickets")
 async def list_all_tickets(
     status_filter: Optional[str] = None,

@@ -132,6 +132,9 @@ export default function AdminTicketsPage() {
         
         // Refresh sidebar ticket statuses
         fetchTickets();
+
+        // Dispatch custom event to refresh Sidebar badge count
+        window.dispatchEvent(new CustomEvent("ticketStatusChanged"));
       }
     } catch (err) {
       console.error("Error sending admin reply:", err);
@@ -161,6 +164,9 @@ export default function AdminTicketsPage() {
         setTicketDetails({ ...ticketDetails, status: updated.status });
         // Refresh list
         fetchTickets();
+
+        // Dispatch custom event to refresh Sidebar badge count
+        window.dispatchEvent(new CustomEvent("ticketStatusChanged"));
       }
     } catch (err) {
       console.error("Error updating ticket status:", err);

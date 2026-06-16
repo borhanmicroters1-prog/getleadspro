@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { auth } from "@/utils/auth";
 import { useEffect, useState } from "react";
+import { api } from "@/utils/api";
 
 interface MenuItem {
   name: string;
@@ -22,6 +23,7 @@ export default function Sidebar() {
   const [userName, setUserName] = useState("User");
   const [userPlan, setUserPlan] = useState("Free");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [pendingTicketsCount, setPendingTicketsCount] = useState<number>(0);
 
   useEffect(() => {
     const user = auth.getCurrentUser();
@@ -37,6 +39,35 @@ export default function Sidebar() {
   }, []);
 
   const isInsideAdmin = pathname.startsWith("/admin");
+
+  useEffect(() => {
+    if (!isAdmin || !isInsideAdmin) {
+      setPendingTicketsCount(0);
+      return;
+    }
+
+    const fetchPendingTicketsCount = async () => {
+      try {
+        const data = await api.get("/api/admin/tickets/pending-count");
+        setPendingTicketsCount(data.pending_count || 0);
+      } catch (err) {
+        console.error("Error fetching pending tickets count:", err);
+      }
+    };
+
+    fetchPendingTicketsCount();
+
+    // Listen for custom ticket status change events
+    window.addEventListener("ticketStatusChanged", fetchPendingTicketsCount);
+
+    // Poll every 60 seconds
+    const interval = setInterval(fetchPendingTicketsCount, 60000);
+
+    return () => {
+      window.removeEventListener("ticketStatusChanged", fetchPendingTicketsCount);
+      clearInterval(interval);
+    };
+  }, [isAdmin, isInsideAdmin]);
 
   const menuItems: MenuItem[] = [
     {
@@ -417,6 +448,25 @@ export default function Sidebar() {
                         {item.icon}
                       </span>
                       <span>{item.name}</span>
+                      {item.name === "Tickets" && pendingTicketsCount > 0 && (
+                        <span 
+                          style={{
+                            marginLeft: "auto",
+                            backgroundColor: "hsl(var(--danger))",
+                            color: "#fff",
+                            fontSize: "0.7rem",
+                            fontWeight: "bold",
+                            padding: "2px 6px",
+                            borderRadius: "10px",
+                            lineHeight: 1,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {pendingTicketsCount}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
