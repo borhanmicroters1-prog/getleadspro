@@ -17,8 +17,8 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 app = FastAPI(
-    title="GetClient API",
-    description="Backend API for GetClient Email Outreach SaaS",
+    title="GetLeads API",
+    description="Backend API for GetLeads Email Outreach SaaS",
     version="1.0.0",
     lifespan=lifespan
 )

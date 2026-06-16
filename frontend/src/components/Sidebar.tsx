@@ -23,7 +23,7 @@ export default function Sidebar() {
     if (user) {
       setUserName(user.name);
       setUserPlan(user.plan);
-      setIsAdmin(user.is_admin || user.email?.toLowerCase() === "admin@getleads.com" || user.email?.toLowerCase() === "admin@getclient.com" || user.email?.toLowerCase() === "borhan.seoexpert@gmail.com");
+      setIsAdmin(user.is_admin || user.email?.toLowerCase() === "admin@getleads.com" || user.email?.toLowerCase() === "borhan.seoexpert@gmail.com");
     }
   }, []);
 

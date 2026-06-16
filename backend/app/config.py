@@ -4,10 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     PORT: int = 8000
-    DATABASE_URL: str = "sqlite+aiosqlite:///./getclient.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./getleads.db"
     SUPABASE_JWT_SECRET: str = "super-secret-jwt-key-for-local-testing"
     SUPABASE_PROJECT_ID: str = "grdqjnazfdznbviopmxf"
-    SUPER_ADMIN_EMAIL: str = "admin@getclient.com"
+    SUPER_ADMIN_EMAIL: str = "admin@getleads.com"
     
     # Scraper API Keys
     GOOGLE_MAPS_API_KEY: str = ""

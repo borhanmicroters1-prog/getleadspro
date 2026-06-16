@@ -50,7 +50,7 @@ async def send_email(
     """
     provider = email_account.provider.strip().lower()
     from_email = email_account.from_email
-    from_name = email_account.from_name or "GetClient Sender"
+    from_name = email_account.from_name or "GetLeads Sender"
     token = email_account.access_token
 
     # Check for mock tokens/development mode

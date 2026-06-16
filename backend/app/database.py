@@ -14,12 +14,23 @@ else:
         "prepared_statement_cache_size": 0
     }
 
-# Create async engine
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    connect_args=connect_args,
-    echo=False
-)
+# Create async engine with connection pooling parameters for PostgreSQL
+if is_sqlite:
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        connect_args=connect_args,
+        echo=False
+    )
+else:
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        connect_args=connect_args,
+        pool_size=20,
+        max_overflow=10,
+        pool_recycle=1800,
+        pool_pre_ping=True,
+        echo=False
+    )
 
 # Create session maker
 async_session_maker = async_sessionmaker(

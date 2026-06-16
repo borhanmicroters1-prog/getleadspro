@@ -18,7 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     } else {
       const isAdminEmail =
         user.email?.toLowerCase() === "admin@getleads.com" ||
-        user.email?.toLowerCase() === "admin@getclient.com" ||
+
         user.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
       if (!user.is_admin && !isAdminEmail) {
         router.push("/dashboard");

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { auth } from "@/utils/auth";
 import { useRouter } from "next/navigation";
-import { landingCss } from "./landing_css";
+import "./landing.css";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -48,8 +48,6 @@ export default function LandingPage() {
 
   return (
     <div className="landing-page">
-      {/* Scoped CSS Injector to isolate Tailwind styling */}
-      <style dangerouslySetInnerHTML={{ __html: landingCss }} />
 
       <div className="min-h-screen flex flex-col bg-white font-sans">
         

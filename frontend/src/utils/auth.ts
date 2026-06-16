@@ -55,7 +55,7 @@ if (typeof window !== "undefined" && supabase) {
         avatar: user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${user.id}`,
         plan: "Free",
         credits: 50,
-        is_admin: user.email?.toLowerCase() === "admin@getleads.com" || user.email?.toLowerCase() === "admin@getclient.com" || user.email?.toLowerCase() === "borhan.seoexpert@gmail.com"
+        is_admin: user.email?.toLowerCase() === "admin@getleads.com" || user.email?.toLowerCase() === "borhan.seoexpert@gmail.com"
       };
       
       // Fetch latest profile settings from backend database

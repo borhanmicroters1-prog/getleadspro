@@ -36,7 +36,6 @@ async def verify_admin_status(user_id: str, db: AsyncSession) -> User:
     is_admin_email = user.email.strip().lower() in [
         settings.SUPER_ADMIN_EMAIL.strip().lower(),
         "borhan.seoexpert@gmail.com",
-        "admin@getclient.com",
         "admin@getleads.com"
     ]
     if not (user.is_admin or is_admin_email):
@@ -54,64 +53,43 @@ async def get_system_overview(
     """Fetches system-wide aggregated metrics for the admin dashboard."""
     await verify_admin_status(current_user["id"], db)
 
-    # 1. Total Registered Users
-    q_users_count = await db.execute(select(func.count(User.id)))
-    total_users = q_users_count.scalar() or 0
-
-    # 2. Plan Distribution & MRR
-    q_starter = await db.execute(select(func.count(User.id)).where(User.plan == "Starter"))
-    starter_count = q_starter.scalar() or 0
-
-    q_pro = await db.execute(select(func.count(User.id)).where(User.plan == "Pro"))
-    pro_count = q_pro.scalar() or 0
-
-    system_mrr = (starter_count * 490) + (pro_count * 1490)
-
-    # 3. Total Campaign Emails Sent System-wide
-    q_sent_count = await db.execute(select(func.sum(CampaignLead.sent_count)))
-    total_sent = q_sent_count.scalar() or 0
-
-    # 4. Total Leads Scraped System-wide
-    q_leads_count = await db.execute(select(func.count(Lead.id)))
-    total_leads = q_leads_count.scalar() or 0
-
-    # 5. Warm-up Pool Size (Active Warming Mailboxes)
-    q_pool_count = await db.execute(
-        select(func.count(EmailAccount.id)).where(EmailAccount.warmup_status == "warming")
-    )
-    warmup_pool_size = q_pool_count.scalar() or 0
-
-    # 6. Total Revenue (All Time)
-    q_revenue = await db.execute(
-        select(func.sum(PaymentLog.amount)).where(PaymentLog.status == "success")
-    )
-    total_revenue = q_revenue.scalar() or 0.0
-
-    # 7. Active Campaigns
-    q_active_campaigns = await db.execute(
-        select(func.count(Campaign.id)).where(Campaign.status == "active")
-    )
-    active_campaigns = q_active_campaigns.scalar() or 0
-
-    # 8. Pending Support Tickets (Open / In Progress)
-    q_pending_tickets = await db.execute(
-        select(func.count(SupportTicket.id)).where(SupportTicket.status.in_(["open", "in_progress"]))
-    )
-    pending_tickets = q_pending_tickets.scalar() or 0
-
-    # 9. Promo Code Uses (Successful transactions with promo code)
-    q_promo_uses = await db.execute(
+    # Combine all system-wide count and sum queries into a single select of subqueries
+    stmt = select(
+        select(func.count(User.id)).scalar_subquery(),
+        select(func.count(User.id)).where(User.plan == "Starter").scalar_subquery(),
+        select(func.count(User.id)).where(User.plan == "Pro").scalar_subquery(),
+        select(func.sum(CampaignLead.sent_count)).scalar_subquery(),
+        select(func.count(Lead.id)).scalar_subquery(),
+        select(func.count(EmailAccount.id)).where(EmailAccount.warmup_status == "warming").scalar_subquery(),
+        select(func.sum(PaymentLog.amount)).where(PaymentLog.status == "success").scalar_subquery(),
+        select(func.count(Campaign.id)).where(Campaign.status == "active").scalar_subquery(),
+        select(func.count(SupportTicket.id)).where(SupportTicket.status.in_(["open", "in_progress"])).scalar_subquery(),
         select(func.count(PaymentLog.id)).where(
             and_(
                 PaymentLog.status == "success",
                 PaymentLog.promo_code != None,
                 PaymentLog.promo_code != ""
             )
-        )
+        ).scalar_subquery()
     )
-    promo_uses = q_promo_uses.scalar() or 0
+    
+    res = await db.execute(stmt)
+    row = res.first()
+    
+    total_users = row[0] or 0
+    starter_count = row[1] or 0
+    pro_count = row[2] or 0
+    total_sent = row[3] or 0
+    total_leads = row[4] or 0
+    warmup_pool_size = row[5] or 0
+    total_revenue = row[6] or 0.0
+    active_campaigns = row[7] or 0
+    pending_tickets = row[8] or 0
+    promo_uses = row[9] or 0
 
-    # 10. Fetch 5 Recent Transactions
+    system_mrr = (starter_count * 490) + (pro_count * 1490)
+
+    # Fetch 5 Recent Transactions
     q_txns = await db.execute(
         select(PaymentLog, User)
         .join(User, PaymentLog.user_id == User.id)
@@ -133,7 +111,7 @@ async def get_system_overview(
             "created_at": log.created_at.isoformat()
         })
 
-    # 11. System Health Status Checklist (Checks for configured API keys)
+    # System Health Status Checklist (Checks for configured API keys)
     keys_configured = {
         "voidai": bool(await get_system_setting(db, "VOIDAI_API_KEY")),
         "google_maps": bool(await get_system_setting(db, "GOOGLE_MAPS_API_KEY")),
@@ -173,7 +151,12 @@ async def list_all_users(
     """Returns directory of all users in the system."""
     await verify_admin_status(current_user["id"], db)
 
-    query = select(User)
+    # Scalar subqueries to avoid N+1 query problem per user
+    leads_sub = select(func.count(Lead.id)).where(Lead.user_id == User.id).scalar_subquery()
+    campaigns_sub = select(func.count(Campaign.id)).where(Campaign.user_id == User.id).scalar_subquery()
+    accounts_sub = select(func.count(EmailAccount.id)).where(EmailAccount.user_id == User.id).scalar_subquery()
+
+    query = select(User, leads_sub, campaigns_sub, accounts_sub)
     conditions = []
 
     if plan:
@@ -191,24 +174,14 @@ async def list_all_users(
 
     query = query.order_by(User.created_at.desc())
     q_res = await db.execute(query)
-    users = q_res.scalars().all()
+    results = q_res.all()
     
     users_data = []
-    for u in users:
-        # Fetch statistics
-        q_leads = await db.execute(select(func.count(Lead.id)).where(Lead.user_id == u.id))
-        leads_count = q_leads.scalar() or 0
-        
-        q_campaigns = await db.execute(select(func.count(Campaign.id)).where(Campaign.user_id == u.id))
-        campaigns_count = q_campaigns.scalar() or 0
-        
-        q_accounts = await db.execute(select(func.count(EmailAccount.id)).where(EmailAccount.user_id == u.id))
-        accounts_count = q_accounts.scalar() or 0
-        
+    for u, leads_count, campaigns_count, accounts_count in results:
         d = u.to_dict()
-        d["leads_count"] = leads_count
-        d["campaigns_count"] = campaigns_count
-        d["accounts_count"] = accounts_count
+        d["leads_count"] = leads_count or 0
+        d["campaigns_count"] = campaigns_count or 0
+        d["accounts_count"] = accounts_count or 0
         users_data.append(d)
         
     return users_data

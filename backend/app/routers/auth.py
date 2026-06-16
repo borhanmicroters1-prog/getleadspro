@@ -41,7 +41,6 @@ async def get_me(
         is_admin_user = (
             user_email == settings.SUPER_ADMIN_EMAIL.strip().lower()
             or user_email == "admin@getleads.com"
-            or user_email == "admin@getclient.com"
             or user_email == "borhan.seoexpert@gmail.com"
         )
         # Load free signup credits dynamically (falls back to 50)
@@ -143,9 +142,9 @@ async def test_telegram_connection(
 
     success = await send_telegram_notification(
         user,
-        f"🤖 <b>GetClient Telegram Integration Test</b>\n\n"
+        f"🤖 <b>GetLeads Telegram Integration Test</b>\n\n"
         f"Hello {user.name or 'there'}!\n"
-        f"Your Telegram bot notifications are now successfully connected to GetClient. "
+        f"Your Telegram bot notifications are now successfully connected to GetLeads. "
         f"You will receive instant reply notifications and daily summary reports here."
     )
 
