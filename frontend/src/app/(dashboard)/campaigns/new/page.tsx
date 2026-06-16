@@ -311,7 +311,7 @@ export default function NewCampaignPage() {
                   ...stepIndicatorStyle,
                   backgroundColor: step === s ? "hsl(var(--accent))" : step > s ? "hsl(var(--success))" : "hsl(var(--bg-tertiary))",
                   borderColor: step >= s ? "hsl(var(--accent) / 50%)" : "hsl(var(--border-color))",
-                  color: "#fff"
+                  color: step >= s ? "#fff" : "hsl(var(--text-secondary))"
                 }}>
                   {step > s ? "✓" : s}
                 </div>

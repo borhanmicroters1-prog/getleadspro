@@ -184,7 +184,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <span style={readOnlyLabelStyle}>Scraping Credits</span>
-                    <span style={{ fontSize: "1rem", fontWeight: 700, color: "#fff", display: "block", marginTop: "0.25rem" }}>
+                    <span style={{ fontSize: "1rem", fontWeight: 700, color: "hsl(var(--text-primary))", display: "block", marginTop: "0.25rem" }}>
                       🪙 {user.credits}
                     </span>
                   </div>

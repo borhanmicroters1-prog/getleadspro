@@ -330,7 +330,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                   </div>
                   <div style={{
                     ...kpiValueStyle,
-                    color: analytics.bounce_rate >= 10.0 ? "hsl(var(--danger))" : "#fff"
+                    color: analytics.bounce_rate >= 10.0 ? "hsl(var(--danger))" : "hsl(var(--text-primary))"
                   }}>{analytics.sent > 0 ? `${analytics.bounce_rate}%` : "-"}</div>
                   <div style={kpiFooterStyle}>
                     {analytics.bounced} bounces
@@ -536,7 +536,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                         <tr key={l.id} style={tableRowStyle}>
                           <td style={tdStyle}>
                             <div style={{ display: "flex", flexDirection: "column" }}>
-                              <span style={{ fontWeight: 600, color: "#fff" }}>{l.name}</span>
+                              <span style={{ fontWeight: 600, color: "hsl(var(--text-primary))" }}>{l.name}</span>
                               <span style={{ fontSize: "12px", color: "hsl(var(--text-muted))" }}>{l.email}</span>
                             </div>
                           </td>
@@ -626,7 +626,7 @@ const headerTextWrapperStyle: React.CSSProperties = {
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: "1.5rem",
-  color: "#fff",
+  color: "hsl(var(--text-primary))",
 };
 
 const sectionSubStyle: React.CSSProperties = {
