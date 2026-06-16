@@ -20,7 +20,14 @@ export default function LoginPage() {
   useEffect(() => {
     const checkAuthAndRedirect = () => {
       if (auth.isAuthenticated()) {
-        router.push("/dashboard");
+        const user = auth.getCurrentUser();
+        const isAdminEmail = user?.email?.toLowerCase() === "admin@getleads.com" || 
+                             user?.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
+        if (user?.is_admin || isAdminEmail) {
+          router.push("/admin");
+        } else {
+          router.push("/dashboard");
+        }
       }
     };
 
@@ -51,11 +58,23 @@ export default function LoginPage() {
 
     try {
       if (isLogin) {
-        await auth.login(email, password);
-        router.push("/dashboard");
+        const user = await auth.login(email, password);
+        const isAdminEmail = user?.email?.toLowerCase() === "admin@getleads.com" || 
+                             user?.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
+        if (user?.is_admin || isAdminEmail) {
+          router.push("/admin");
+        } else {
+          router.push("/dashboard");
+        }
       } else {
-        await auth.signUp(email, password, name);
-        router.push("/dashboard");
+        const user = await auth.signUp(email, password, name);
+        const isAdminEmail = user?.email?.toLowerCase() === "admin@getleads.com" || 
+                             user?.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
+        if (user?.is_admin || isAdminEmail) {
+          router.push("/admin");
+        } else {
+          router.push("/dashboard");
+        }
       }
     } catch (err: any) {
       if (err.message && err.message.includes("Verification code sent")) {
@@ -78,8 +97,14 @@ export default function LoginPage() {
     setError("");
     setIsLoading(true);
     try {
-      await auth.verifyCode(verificationEmail, otpCode, name);
-      router.push("/dashboard");
+      const user = await auth.verifyCode(verificationEmail, otpCode, name);
+      const isAdminEmail = user?.email?.toLowerCase() === "admin@getleads.com" || 
+                           user?.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
+      if (user?.is_admin || isAdminEmail) {
+        router.push("/admin");
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err: any) {
       setError(err.message || "Verification failed. Please check the code and try again.");
       setIsLoading(false);

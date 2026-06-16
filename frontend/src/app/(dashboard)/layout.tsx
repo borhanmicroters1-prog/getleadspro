@@ -21,14 +21,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           router.push("/login");
         }
       } else {
-        const isAdminEmail = currentUser.email?.toLowerCase() === "admin@getleads.com" || 
-                             currentUser.email?.toLowerCase() === "borhan.seoexpert@gmail.com";
-        if (currentUser.is_admin || isAdminEmail) {
-          router.push("/admin");
-        } else {
-          setAuthorized(true);
-          setLoading(false);
-        }
+        setAuthorized(true);
+        setLoading(false);
       }
     };
 
