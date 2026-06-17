@@ -74,7 +74,8 @@ async def init_db():
         ("email_logs", "provider_constraint_add", "ALTER TABLE email_logs ADD CONSTRAINT email_logs_provider_check CHECK (provider IN ('gmail', 'brevo', 'outlook', 'webmail'))"),
         ("campaigns", "rotate_mailbox_ids", "ALTER TABLE campaigns ADD COLUMN rotate_mailbox_ids VARCHAR(2000)"),
         ("campaigns", "ai_model", "ALTER TABLE campaigns ADD COLUMN ai_model VARCHAR(100) DEFAULT 'claude-3.5-sonnet'"),
-        ("campaigns", "ai_prompt_template", "ALTER TABLE campaigns ADD COLUMN ai_prompt_template VARCHAR(2000)")
+        ("campaigns", "ai_prompt_template", "ALTER TABLE campaigns ADD COLUMN ai_prompt_template VARCHAR(2000)"),
+        ("users", "custom_tracking_domain", "ALTER TABLE users ADD COLUMN custom_tracking_domain VARCHAR(255)")
     ]
 
     for table, column, sql in migrations:
