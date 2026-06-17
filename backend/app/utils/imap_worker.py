@@ -39,39 +39,79 @@ def clean_header(header_value):
             parts.append(part)
     return "".join(parts)
 
-def run_imap_operations_sync(email_address: str, app_password: str):
+def run_imap_operations_sync(provider: str, email_address: str, app_password_or_config: str):
     """
-    Connects to Gmail IMAP.
-    - Searches SPAM for emails with header 'X-GetLeads-Warmup: true'.
+    Connects to email provider IMAP.
+    - Searches SPAM/Junk for emails with header 'X-GetLeads-Warmup: true'.
       Moves them to INBOX and returns count.
     - Searches INBOX for unread emails with header 'X-GetLeads-Warmup: true'.
-      Marks them as read, and returns sender email details (message-id, subject, from_email) so we can reply.
+      Marks them as read, and returns sender email details so we can reply.
     """
     spam_moved_count = 0
     emails_to_reply = []
 
-    try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login(email_address, app_password)
-    except Exception as e:
-        logger.error(f"IMAP login failed for {email_address}: {str(e)}")
+    # Determine server details
+    imap_server = None
+    imap_port = 993
+    password = app_password_or_config
+
+    provider = provider.strip().lower()
+    if provider == "gmail":
+        imap_server = "imap.gmail.com"
+    elif provider == "outlook":
+        imap_server = "outlook.office365.com"
+    elif provider == "webmail":
+        try:
+            import json
+            config = json.loads(app_password_or_config)
+            imap_server = config["imap_host"]
+            imap_port = int(config.get("imap_port", 993))
+            password = config["password"]
+        except Exception as e:
+            logger.error(f"Failed to parse webmail config for IMAP of {email_address}: {e}")
+            return spam_moved_count, emails_to_reply
+    else:
+        logger.error(f"Unsupported IMAP provider: {provider}")
         return spam_moved_count, emails_to_reply
 
     try:
-        # 1. SPAM folder processing
+        if imap_port == 993:
+            mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        else:
+            mail = imaplib.IMAP4(imap_server, imap_port)
+        mail.login(email_address, password)
+    except Exception as e:
+        logger.error(f"IMAP login failed for {email_address} ({provider}): {str(e)}")
+        return spam_moved_count, emails_to_reply
+
+    try:
+        # 1. SPAM/Junk folder processing
         spam_folder = None
         status, folder_list = mail.list()
         if status == "OK":
             for f in folder_list:
                 f_str = f.decode("utf-8")
-                if "Spam" in f_str or "SPAM" in f_str.upper():
+                # Look for typical Spam or Junk folder name patterns
+                if any(x in f_str for x in ["Spam", "SPAM", "Junk", "JUNK", "Junk Email", "Junk E-mail"]):
+                    # Extract folder name
                     parts = f_str.split(' "/" ')
                     if len(parts) > 1:
                         spam_folder = parts[1].strip('"')
                         break
+                    # fallback for custom split formats
+                    parts_space = f_str.split(' ')
+                    if len(parts_space) > 0:
+                        spam_folder = parts_space[-1].strip('"')
+                        break
         
+        # Fallback folder names if not found dynamically
         if not spam_folder:
-            spam_folder = "[Gmail]/Spam"
+            if provider == "gmail":
+                spam_folder = "[Gmail]/Spam"
+            elif provider == "outlook":
+                spam_folder = "Junk"
+            else:
+                spam_folder = "Spam"
 
         try:
             mail.select(spam_folder)
@@ -89,7 +129,7 @@ def run_imap_operations_sync(email_address: str, app_password: str):
                             spam_moved_count += 1
                 mail.expunge()
         except Exception as se:
-            logger.warning(f"Could not search spam folder {spam_folder}: {str(se)}")
+            logger.warning(f"Could not search spam folder {spam_folder} for {email_address}: {str(se)}")
 
         # 2. INBOX folder processing (unread emails)
         mail.select("INBOX")
@@ -121,7 +161,7 @@ def run_imap_operations_sync(email_address: str, app_password: str):
                         mail.store(msg_id, "+FLAGS", "\\Seen")
                         
     except Exception as e:
-        logger.error(f"Error during IMAP operations for {email_address}: {str(e)}")
+        logger.error(f"Error during IMAP operations for {email_address} ({provider}): {str(e)}")
     finally:
         try:
             mail.close()
@@ -139,12 +179,13 @@ async def process_incoming_warmups(account: EmailAccount, db: AsyncSession):
     if not app_password or app_password.startswith("mock-") or app_password == "mock-token":
         return
 
-    if provider != "gmail":
+    if provider not in ["gmail", "outlook", "webmail"]:
         return
 
     # Run IMAP network calls in a background thread to prevent blocking the event loop
     spam_moved, emails_to_reply = await asyncio.to_thread(
         run_imap_operations_sync,
+        provider,
         email_address,
         app_password
     )

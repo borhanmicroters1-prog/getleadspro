@@ -191,6 +191,7 @@ class EmailAccount(Base):
     daily_limit = Column(Integer, default=50)
     emails_sent_today = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    is_system_seed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Warm-up Fields
@@ -216,6 +217,7 @@ class EmailAccount(Base):
             "daily_limit": self.daily_limit,
             "emails_sent_today": self.emails_sent_today,
             "is_active": self.is_active,
+            "is_system_seed": self.is_system_seed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "warmup_enabled": self.warmup_enabled,
             "warmup_status": self.warmup_status,

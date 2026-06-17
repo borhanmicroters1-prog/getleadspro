@@ -66,7 +66,12 @@ async def init_db():
         ("email_accounts", "warmup_status", "ALTER TABLE email_accounts ADD COLUMN warmup_status VARCHAR(50) DEFAULT 'idle'"),
         ("email_accounts", "warmup_started_at", "ALTER TABLE email_accounts ADD COLUMN warmup_started_at TIMESTAMP"),
         ("email_accounts", "warmup_health_score", "ALTER TABLE email_accounts ADD COLUMN warmup_health_score INTEGER DEFAULT 100"),
-        ("payment_logs", "promo_code", "ALTER TABLE payment_logs ADD COLUMN promo_code VARCHAR(50)")
+        ("email_accounts", "is_system_seed", "ALTER TABLE email_accounts ADD COLUMN is_system_seed BOOLEAN DEFAULT false"),
+        ("payment_logs", "promo_code", "ALTER TABLE payment_logs ADD COLUMN promo_code VARCHAR(50)"),
+        ("email_accounts", "provider_constraint_drop", "ALTER TABLE email_accounts DROP CONSTRAINT IF EXISTS email_accounts_provider_check"),
+        ("email_accounts", "provider_constraint_add", "ALTER TABLE email_accounts ADD CONSTRAINT email_accounts_provider_check CHECK (provider IN ('gmail', 'brevo', 'outlook', 'webmail'))"),
+        ("email_logs", "provider_constraint_drop", "ALTER TABLE email_logs DROP CONSTRAINT IF EXISTS email_logs_provider_check"),
+        ("email_logs", "provider_constraint_add", "ALTER TABLE email_logs ADD CONSTRAINT email_logs_provider_check CHECK (provider IN ('gmail', 'brevo', 'outlook', 'webmail'))")
     ]
 
     for table, column, sql in migrations:

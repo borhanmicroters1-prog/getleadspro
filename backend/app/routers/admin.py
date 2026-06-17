@@ -1737,3 +1737,281 @@ async def download_credits_report(
     )
     response.headers["Content-Disposition"] = "attachment; filename=credits_report.csv"
     return response
+
+
+class SeedGmailConnectRequest(BaseModel):
+    from_name: str
+    from_email: str
+    app_password: str
+    daily_limit: Optional[int] = 50
+
+class SeedBrevoConnectRequest(BaseModel):
+    from_name: str
+    from_email: str
+    api_key: str
+    daily_limit: Optional[int] = 300
+
+class SeedOutlookConnectRequest(BaseModel):
+    from_name: str
+    from_email: str
+    app_password: str
+    daily_limit: Optional[int] = 50
+
+class SeedWebmailConnectRequest(BaseModel):
+    from_name: str
+    from_email: str
+    smtp_host: str
+    smtp_port: int
+    imap_host: str
+    imap_port: Optional[int] = 993
+    password: str
+    daily_limit: Optional[int] = 50
+
+
+@router.get("/warmup/seeds")
+async def list_seed_accounts(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lists all admin-configured system seed accounts for the warmup pool."""
+    await verify_admin_status(current_user["id"], db)
+    result = await db.execute(
+        select(EmailAccount).where(EmailAccount.is_system_seed == True).order_by(EmailAccount.created_at.desc())
+    )
+    accounts = result.scalars().all()
+    return [account.to_dict() for account in accounts]
+
+
+@router.post("/warmup/seed/gmail")
+async def connect_seed_gmail(
+    request: SeedGmailConnectRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Connects a system seed Gmail account to the warmup pool."""
+    admin = await verify_admin_status(current_user["id"], db)
+    from_email = request.from_email.strip().lower()
+    if "@" not in from_email:
+        raise HTTPException(status_code=400, detail="Invalid Gmail email address.")
+    if not request.app_password.strip():
+        raise HTTPException(status_code=400, detail="App password cannot be empty.")
+    
+    # Check if already connected for this admin user
+    q = await db.execute(
+        select(EmailAccount).where(
+            and_(
+                EmailAccount.user_id == admin.id,
+                EmailAccount.from_email == from_email
+            )
+        )
+    )
+    account = q.scalars().first()
+    if account:
+        account.provider = "gmail"
+        account.from_name = request.from_name
+        account.access_token = request.app_password.strip()
+        account.is_system_seed = True
+        account.warmup_enabled = True
+        account.warmup_status = "warming"
+        account.daily_limit = request.daily_limit or 50
+    else:
+        account = EmailAccount(
+            user_id=admin.id,
+            provider="gmail",
+            access_token=request.app_password.strip(),
+            from_email=from_email,
+            from_name=request.from_name,
+            is_system_seed=True,
+            warmup_enabled=True,
+            warmup_status="warming",
+            daily_limit=request.daily_limit or 50
+        )
+        db.add(account)
+    
+    await db.commit()
+    await db.refresh(account)
+    return account.to_dict()
+
+
+@router.post("/warmup/seed/brevo")
+async def connect_seed_brevo(
+    request: SeedBrevoConnectRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Connects a system seed Brevo account to the warmup pool."""
+    admin = await verify_admin_status(current_user["id"], db)
+    from_email = request.from_email.strip().lower()
+    if "@" not in from_email:
+        raise HTTPException(status_code=400, detail="Invalid Brevo email address.")
+    if not request.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+    
+    # Check if already connected for this admin user
+    q = await db.execute(
+        select(EmailAccount).where(
+            and_(
+                EmailAccount.user_id == admin.id,
+                EmailAccount.from_email == from_email
+            )
+        )
+    )
+    account = q.scalars().first()
+    if account:
+        account.provider = "brevo"
+        account.from_name = request.from_name
+        account.access_token = request.api_key.strip()
+        account.is_system_seed = True
+        account.warmup_enabled = True
+        account.warmup_status = "warming"
+        account.daily_limit = request.daily_limit or 300
+    else:
+        account = EmailAccount(
+            user_id=admin.id,
+            provider="brevo",
+            access_token=request.api_key.strip(),
+            from_email=from_email,
+            from_name=request.from_name,
+            is_system_seed=True,
+            warmup_enabled=True,
+            warmup_status="warming",
+            daily_limit=request.daily_limit or 300
+        )
+        db.add(account)
+    
+    await db.commit()
+    await db.refresh(account)
+    return account.to_dict()
+
+
+@router.post("/warmup/seed/outlook")
+async def connect_seed_outlook(
+    request: SeedOutlookConnectRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Connects a system seed Outlook account to the warmup pool."""
+    admin = await verify_admin_status(current_user["id"], db)
+    from_email = request.from_email.strip().lower()
+    if "@" not in from_email:
+        raise HTTPException(status_code=400, detail="Invalid Outlook email address.")
+    if not request.app_password.strip():
+        raise HTTPException(status_code=400, detail="App password cannot be empty.")
+    
+    # Check if already connected for this admin user
+    q = await db.execute(
+        select(EmailAccount).where(
+            and_(
+                EmailAccount.user_id == admin.id,
+                EmailAccount.from_email == from_email
+            )
+        )
+    )
+    account = q.scalars().first()
+    if account:
+        account.provider = "outlook"
+        account.from_name = request.from_name
+        account.access_token = request.app_password.strip()
+        account.is_system_seed = True
+        account.warmup_enabled = True
+        account.warmup_status = "warming"
+        account.daily_limit = request.daily_limit or 50
+    else:
+        account = EmailAccount(
+            user_id=admin.id,
+            provider="outlook",
+            access_token=request.app_password.strip(),
+            from_email=from_email,
+            from_name=request.from_name,
+            is_system_seed=True,
+            warmup_enabled=True,
+            warmup_status="warming",
+            daily_limit=request.daily_limit or 50
+        )
+        db.add(account)
+    
+    await db.commit()
+    await db.refresh(account)
+    return account.to_dict()
+
+
+@router.post("/warmup/seed/webmail")
+async def connect_seed_webmail(
+    request: SeedWebmailConnectRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Connects a system seed Webmail account to the warmup pool."""
+    admin = await verify_admin_status(current_user["id"], db)
+    from_email = request.from_email.strip().lower()
+    if "@" not in from_email:
+        raise HTTPException(status_code=400, detail="Invalid Webmail email address.")
+    
+    # Construct access token JSON
+    import json
+    config = {
+        "smtp_host": request.smtp_host.strip(),
+        "smtp_port": request.smtp_port,
+        "imap_host": request.imap_host.strip(),
+        "imap_port": request.imap_port or 993,
+        "password": request.password.strip()
+    }
+    config_json = json.dumps(config)
+    
+    # Check if already connected for this admin user
+    q = await db.execute(
+        select(EmailAccount).where(
+            and_(
+                EmailAccount.user_id == admin.id,
+                EmailAccount.from_email == from_email
+            )
+        )
+    )
+    account = q.scalars().first()
+    if account:
+        account.provider = "webmail"
+        account.from_name = request.from_name
+        account.access_token = config_json
+        account.is_system_seed = True
+        account.warmup_enabled = True
+        account.warmup_status = "warming"
+        account.daily_limit = request.daily_limit or 50
+    else:
+        account = EmailAccount(
+            user_id=admin.id,
+            provider="webmail",
+            access_token=config_json,
+            from_email=from_email,
+            from_name=request.from_name,
+            is_system_seed=True,
+            warmup_enabled=True,
+            warmup_status="warming",
+            daily_limit=request.daily_limit or 50
+        )
+        db.add(account)
+    
+    await db.commit()
+    await db.refresh(account)
+    return account.to_dict()
+
+
+@router.delete("/warmup/seed/{account_id}")
+async def delete_seed_account(
+    account_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Disconnects and removes a system seed account from the pool."""
+    await verify_admin_status(current_user["id"], db)
+    from sqlalchemy import delete
+    stmt = delete(EmailAccount).where(
+        and_(
+            EmailAccount.id == account_id,
+            EmailAccount.is_system_seed == True
+        )
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Seed mailbox not found.")
+    return {"message": "Seed mailbox disconnected successfully."}

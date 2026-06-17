@@ -30,8 +30,14 @@ async def list_email_accounts(
   current_user: dict = Depends(get_current_user),
   db: AsyncSession = Depends(get_db)
 ):
+  from sqlalchemy import and_
   result = await db.execute(
-    select(EmailAccount).where(EmailAccount.user_id == current_user["id"])
+    select(EmailAccount).where(
+      and_(
+        EmailAccount.user_id == current_user["id"],
+        EmailAccount.is_system_seed == False
+      )
+    )
   )
   accounts = result.scalars().all()
   return [account.to_dict() for account in accounts]

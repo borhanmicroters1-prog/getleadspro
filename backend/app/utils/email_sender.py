@@ -36,6 +36,64 @@ def send_gmail_smtp_sync(
         server.sendmail(from_email, to_email, mime.as_string())
     return True
 
+def send_outlook_smtp_sync(
+    from_name: str,
+    from_email: str,
+    to_email: str,
+    subject: str,
+    body: str,
+    app_password: str,
+    headers: dict = None
+) -> bool:
+    """Synchronous function to send email using Outlook SMTP and App Password."""
+    mime = MIMEText(body)
+    mime["to"] = to_email
+    mime["from"] = f"{from_name} <{from_email}>"
+    mime["subject"] = subject
+    
+    if headers:
+        for k, v in headers.items():
+            if k.lower() not in ["to", "from", "subject"]:
+                mime[k] = v
+                
+    with smtplib.SMTP("smtp.office365.com", 587, timeout=15.0) as server:
+        server.starttls()
+        server.login(from_email, app_password)
+        server.sendmail(from_email, to_email, mime.as_string())
+    return True
+
+def send_webmail_smtp_sync(
+    from_name: str,
+    from_email: str,
+    to_email: str,
+    subject: str,
+    body: str,
+    config_json: str,
+    headers: dict = None
+) -> bool:
+    """Synchronous function to send email using custom Webmail SMTP configurations."""
+    import json
+    config = json.loads(config_json)
+    smtp_host = config["smtp_host"]
+    smtp_port = int(config["smtp_port"])
+    password = config["password"]
+
+    mime = MIMEText(body)
+    mime["to"] = to_email
+    mime["from"] = f"{from_name} <{from_email}>"
+    mime["subject"] = subject
+    
+    if headers:
+        for k, v in headers.items():
+            if k.lower() not in ["to", "from", "subject"]:
+                mime[k] = v
+                
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=15.0) as server:
+        server.starttls()
+        server.login(from_email, password)
+        server.sendmail(from_email, to_email, mime.as_string())
+    return True
+
 async def send_email(
     email_account: EmailAccount,
     to_email: str,
@@ -45,7 +103,7 @@ async def send_email(
     headers: dict = None
 ) -> bool:
     """
-    Sends an email using either Gmail SMTP (with App Password) or Brevo API, based on the email account provider.
+    Sends an email using Gmail, Brevo, Outlook or custom Webmail credentials.
     Supports mock fallbacks for local development testing.
     """
     provider = email_account.provider.strip().lower()
@@ -105,7 +163,6 @@ async def send_email(
 
     elif provider == "gmail":
         try:
-            # Send using real Gmail SMTP App Password logic
             success = await asyncio.to_thread(
                 send_gmail_smtp_sync,
                 from_name,
@@ -122,6 +179,46 @@ async def send_email(
             return False
         except Exception as e:
             logger.error(f"Gmail SMTP sending error: {str(e)}")
+            return False
+
+    elif provider == "outlook":
+        try:
+            success = await asyncio.to_thread(
+                send_outlook_smtp_sync,
+                from_name,
+                from_email,
+                to_email,
+                subject,
+                body,
+                token,
+                headers
+            )
+            if success:
+                logger.info(f"Outlook SMTP email sent to {to_email}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Outlook SMTP sending error: {str(e)}")
+            return False
+
+    elif provider == "webmail":
+        try:
+            success = await asyncio.to_thread(
+                send_webmail_smtp_sync,
+                from_name,
+                from_email,
+                to_email,
+                subject,
+                body,
+                token,
+                headers
+            )
+            if success:
+                logger.info(f"Webmail SMTP email sent to {to_email}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Webmail SMTP sending error: {str(e)}")
             return False
 
     else:
