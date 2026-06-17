@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_
 import base64
+import uuid
 
 from app.database import get_db
 from app.models import CampaignLead, Lead, Blacklist, Campaign
@@ -19,6 +20,15 @@ async def unsubscribe_recipient(
     Marks their campaign lead status and lead status as unsubscribed,
     and appends their email to the user's blacklist.
     """
+    # Validate UUID format to prevent Postgres database DataError crash
+    try:
+        uuid.UUID(campaign_lead_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid unsubscribe link format."
+        )
+
     # 1. Fetch CampaignLead record
     q_c_lead = await db.execute(
         select(CampaignLead).where(CampaignLead.id == campaign_lead_id)
@@ -100,6 +110,14 @@ async def track_email_open(
     Public unauthenticated endpoint to track email opens using a 1x1 transparent tracking pixel.
     Updates the CampaignLead's status to 'opened' if it was 'sent'.
     """
+    # Validate UUID format to prevent Postgres database DataError crash
+    try:
+        uuid.UUID(campaign_lead_id)
+    except ValueError:
+        # Gracefully return the tracking pixel even if ID is invalid
+        pixel_data = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+        return Response(content=pixel_data, media_type="image/gif")
+
     # 1. Fetch CampaignLead record
     q_c_lead = await db.execute(
         select(CampaignLead).where(CampaignLead.id == campaign_lead_id)
