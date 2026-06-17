@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str = "super-secret-jwt-key-for-local-testing"
     SUPABASE_PROJECT_ID: str = "grdqjnazfdznbviopmxf"
     SUPER_ADMIN_EMAIL: str = "admin@getleads.com"
+    CRON_SECRET: str = "super-secret-cron-key-for-local-testing"
     
     # Scraper API Keys
     GOOGLE_MAPS_API_KEY: str = ""

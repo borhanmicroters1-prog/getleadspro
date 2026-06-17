@@ -1,5 +1,7 @@
 import logging
-from fastapi import APIRouter, status
+from typing import Optional
+from fastapi import APIRouter, status, Depends, HTTPException, Header, Query
+from app.config import settings
 
 from app.utils.scheduler import (
     send_emails_job,
@@ -11,7 +13,32 @@ from app.utils.scheduler import (
 )
 
 logger = logging.getLogger("cron")
-router = APIRouter(prefix="/api/cron", tags=["Cron Jobs"])
+
+async def verify_cron_secret(
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
+    secret: Optional[str] = Query(None)
+):
+    """Dependency function to verify cron requests using either header or query parameter."""
+    provided = x_cron_secret or secret
+    if not settings.CRON_SECRET:
+        if settings.ENVIRONMENT == "production":
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Cron secret is not configured on the server."
+            )
+        # If no secret is configured, bypass the check to avoid lockout in local development
+        return
+    if provided != settings.CRON_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized cron trigger token."
+        )
+
+router = APIRouter(
+    prefix="/api/cron",
+    tags=["Cron Jobs"],
+    dependencies=[Depends(verify_cron_secret)]
+)
 
 @router.post("/send-emails")
 async def trigger_send_emails():

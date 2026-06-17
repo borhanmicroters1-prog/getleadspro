@@ -31,7 +31,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 payload = jwt.decode(
                     token,
                     signing_key.key,
-                    algorithms=["RS256", "ES256", "HS256"],
+                    algorithms=["RS256", "ES256"],
                     options={"verify_aud": False}
                 )
             except jwt.ExpiredSignatureError:
@@ -41,7 +41,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 payload = jwt.decode(
                     token,
                     settings.SUPABASE_JWT_SECRET,
-                    algorithms=["RS256", "ES256", "HS256"],
+                    algorithms=["HS256"],
                     options={"verify_aud": False}
                 )
         else:

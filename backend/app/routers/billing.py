@@ -222,17 +222,25 @@ async def payment_success_callback(
     item_type = value_b
     item_id = value_c
 
-    # If it is a real connection, we validate via SSLCommerz validation API
+    # Resolve SSLCommerz settings dynamically
+    sslcommerz_store_id = await get_system_setting(db, "SSLCOMMERZ_STORE_ID")
+    sslcommerz_store_passwd = await get_system_setting(db, "SSLCOMMERZ_STORE_PASSWORD")
+    is_gateway_configured = bool(sslcommerz_store_id and sslcommerz_store_passwd)
+
     is_mock = not val_id or val_id.startswith("MOCK_")
     
-    if not is_mock:
+    if is_mock:
+        if settings.ENVIRONMENT == "production" or is_gateway_configured:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mock payments are disabled when live gateway credentials are set or in production."
+            )
+    else:
         valid_url = (
             "https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php"
             if settings.SSLCOMMERZ_IS_SANDBOX
             else "https://securepay.sslcommerz.com/validator/api/validationserverAPI.php"
         )
-        sslcommerz_store_id = await get_system_setting(db, "SSLCOMMERZ_STORE_ID")
-        sslcommerz_store_passwd = await get_system_setting(db, "SSLCOMMERZ_STORE_PASSWORD")
         params = {
             "val_id": val_id,
             "store_id": sslcommerz_store_id,
