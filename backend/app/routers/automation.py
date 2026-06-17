@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_
+import base64
 
 from app.database import get_db
 from app.models import CampaignLead, Lead, Blacklist, Campaign
@@ -88,3 +89,29 @@ async def unsubscribe_recipient(
         "message": "You have been successfully unsubscribed.",
         "email": lead.email
     }
+
+
+@router.get("/track/open/{campaign_lead_id}")
+async def track_email_open(
+    campaign_lead_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Public unauthenticated endpoint to track email opens using a 1x1 transparent tracking pixel.
+    Updates the CampaignLead's status to 'opened' if it was 'sent'.
+    """
+    # 1. Fetch CampaignLead record
+    q_c_lead = await db.execute(
+        select(CampaignLead).where(CampaignLead.id == campaign_lead_id)
+    )
+    c_lead = q_c_lead.scalars().first()
+    
+    if c_lead:
+        # Only update status to "opened" if it's currently "sent"
+        if c_lead.status == "sent":
+            c_lead.status = "opened"
+            await db.commit()
+
+    # 1x1 transparent GIF image bytes
+    pixel_data = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+    return Response(content=pixel_data, media_type="image/gif")

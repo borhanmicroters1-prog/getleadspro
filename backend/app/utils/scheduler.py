@@ -11,7 +11,7 @@ from app.models import Campaign, CampaignLead, Lead, EmailAccount, User, Blackli
 import asyncio
 from app.utils.email_sender import send_email
 from app.utils.telegram import send_telegram_notification
-from app.utils.imap_worker import process_incoming_warmups
+from app.utils.imap_worker import process_incoming_warmups, run_real_imap_replies_and_bounces_sync
 
 logger = logging.getLogger("scheduler")
 scheduler = AsyncIOScheduler()
@@ -210,7 +210,7 @@ async def send_emails_job():
                 body_subbed = substitute_variables(campaign.body_template, lead)
 
                 # 7. Deliver email
-                success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db)
+                success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db, campaign_lead_id=c_lead.id)
                 
                 if success:
                     c_lead.status = "sent"
@@ -378,7 +378,7 @@ async def check_follow_ups_job():
             body_subbed = substitute_variables(follow_up_body, lead)
 
             # Send follow-up
-            success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db)
+            success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db, campaign_lead_id=c_lead.id)
             
             if success:
                 c_lead.sent_count = step_number
@@ -394,106 +394,227 @@ async def check_follow_ups_job():
             else:
                 logger.error(f"Failed to send follow-up to lead {lead.email}")
 
+async def check_and_apply_bounce_limit(campaign: Campaign, user: User, db):
+    c_leads_q = await db.execute(
+        select(CampaignLead.status, func.count(CampaignLead.id))
+        .where(CampaignLead.campaign_id == campaign.id)
+        .group_by(CampaignLead.status)
+    )
+    status_counts = dict(c_leads_q.all())
+    sent = status_counts.get("sent", 0) + status_counts.get("opened", 0) + status_counts.get("replied", 0) + status_counts.get("bounced", 0)
+    bounced = status_counts.get("bounced", 0)
+    
+    bounce_rate = (bounced / sent) * 100 if sent > 0 else 0
+    if bounce_rate > 10.0:
+        campaign.status = "paused"
+        await db.commit()
+        if user:
+            pause_text = (
+                f"⚠️ <b>Campaign Auto-Paused!</b>\n\n"
+                f"Campaign: <b>{campaign.name}</b> has exceeded the 10% bounce safety threshold.\n"
+                f"Current Bounce Rate: <b>{bounce_rate:.1f}%</b> ({bounced} bounces out of {sent} sent).\n"
+                f"Action Required: Clean your email list and verify MX records before resuming."
+            )
+            await send_telegram_notification(user, pause_text)
+
+
+async def simulate_replies_and_bounces_for_mailbox(mailbox: EmailAccount, db):
+    # Fetch campaign leads that have status "sent" or "opened" in active campaigns of this user
+    q_leads = await db.execute(
+        select(CampaignLead, Lead, Campaign)
+        .join(Lead, CampaignLead.lead_id == Lead.id)
+        .join(Campaign, CampaignLead.campaign_id == Campaign.id)
+        .where(
+            and_(
+                Campaign.status == "active",
+                Campaign.user_id == mailbox.user_id,
+                CampaignLead.status.in_(["sent", "opened"])
+            )
+        )
+    )
+    
+    for c_lead, lead, campaign in q_leads.all():
+        if not c_lead.last_sent_at:
+            continue
+        delta = datetime.datetime.now(datetime.timezone.utc) - c_lead.last_sent_at.replace(tzinfo=datetime.timezone.utc)
+        if delta.total_seconds() < 30:
+            continue
+
+        dice = random.random()
+        
+        if dice < 0.10:  # Reply received!
+            c_lead.status = "replied"
+            c_lead.next_follow_up_at = None
+            lead.status = "replied"
+            await db.commit()
+            
+            q_user = await db.execute(select(User).where(User.id == campaign.user_id))
+            user = q_user.scalars().first()
+            
+            if user:
+                message_text = (
+                    f"💬 <b>New Reply Received! (Simulated)</b>\n\n"
+                    f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
+                    f"Company: {lead.company or '-'}\n"
+                    f"Campaign: <b>{campaign.name}</b>\n\n"
+                    f"<i>\"Thanks for reaching out! I would love to connect and jump on a call next Wednesday.\"</i>"
+                )
+                await send_telegram_notification(user, message_text)
+                
+        elif dice < 0.15:  # Bounce received!
+            c_lead.status = "bounced"
+            c_lead.next_follow_up_at = None
+            lead.status = "bounced"
+            await db.commit()
+            
+            q_user = await db.execute(select(User).where(User.id == campaign.user_id))
+            user = q_user.scalars().first()
+            
+            if user:
+                message_text = (
+                    f"❌ <b>Outreach Email Bounced! (Simulated)</b>\n\n"
+                    f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
+                    f"Campaign: <b>{campaign.name}</b>\n"
+                    f"Status: Undeliverable address."
+                )
+                await send_telegram_notification(user, message_text)
+                
+            await check_and_apply_bounce_limit(campaign, user, db)
+
+
+async def check_real_replies_and_bounces(mailbox: EmailAccount, db):
+    # Fetch campaign leads that have status "sent" or "opened" in active campaigns of this user
+    q_leads = await db.execute(
+        select(CampaignLead, Lead, Campaign)
+        .join(Lead, CampaignLead.lead_id == Lead.id)
+        .join(Campaign, CampaignLead.campaign_id == Campaign.id)
+        .where(
+            and_(
+                Campaign.status == "active",
+                Campaign.user_id == mailbox.user_id,
+                CampaignLead.status.in_(["sent", "opened"])
+            )
+        )
+    )
+    
+    leads_by_email = {}
+    for c_lead, lead, campaign in q_leads.all():
+        leads_by_email[lead.email.lower()] = (c_lead, lead, campaign)
+        
+    if not leads_by_email:
+        return
+        
+    active_outreach_emails = list(leads_by_email.keys())
+    
+    detected_replies, detected_bounces = await asyncio.to_thread(
+        run_real_imap_replies_and_bounces_sync,
+        mailbox.provider,
+        mailbox.from_email,
+        mailbox.access_token,
+        active_outreach_emails
+    )
+    
+    q_user = await db.execute(select(User).where(User.id == mailbox.user_id))
+    user = q_user.scalars().first()
+    
+    for reply in detected_replies:
+        email_key = reply["email"].lower()
+        if email_key in leads_by_email:
+            c_lead, lead, campaign = leads_by_email[email_key]
+            
+            c_lead.status = "replied"
+            c_lead.next_follow_up_at = None
+            lead.status = "replied"
+            await db.commit()
+            
+            if user:
+                body_snippet = reply["body_snippet"] or "No text content preview."
+                message_text = (
+                    f"💬 <b>New Reply Received!</b>\n\n"
+                    f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
+                    f"Company: {lead.company or '-'}\n"
+                    f"Campaign: <b>{campaign.name}</b>\n\n"
+                    f"Subject: <i>{reply['subject']}</i>\n"
+                    f"Message: <i>\"{body_snippet}\"</i>"
+                )
+                await send_telegram_notification(user, message_text)
+                
+    for bounce_email in detected_bounces:
+        email_key = bounce_email.lower()
+        if email_key in leads_by_email:
+            c_lead, lead, campaign = leads_by_email[email_key]
+            
+            c_lead.status = "bounced"
+            c_lead.next_follow_up_at = None
+            lead.status = "bounced"
+            await db.commit()
+            
+            if user:
+                message_text = (
+                    f"❌ <b>Outreach Email Bounced!</b>\n\n"
+                    f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
+                    f"Campaign: <b>{campaign.name}</b>\n"
+                    f"Status: Undeliverable address."
+                )
+                await send_telegram_notification(user, message_text)
+                
+            await check_and_apply_bounce_limit(campaign, user, db)
+
+
 async def check_replies_and_bounces_job():
     """
     Checks mailboxes for replies and bounces.
-    In development mock mode, this simulates incoming replies/bounces
-    on active sent outreaches to allow testing statistics and notifications.
+    Identifies if mailboxes are mock or real and routes tasks accordingly.
     """
     logger.info("Running check_replies_and_bounces_job...")
     async with async_session_maker() as db:
-        # Fetch campaign leads that have status "sent" in active campaigns
-        q_leads = await db.execute(
-            select(CampaignLead, Lead, Campaign)
-            .join(Lead, CampaignLead.lead_id == Lead.id)
-            .join(Campaign, CampaignLead.campaign_id == Campaign.id)
-            .where(
-                and_(
-                    Campaign.status == "active",
-                    CampaignLead.status == "sent"
-                )
-            )
+        # Fetch active campaigns
+        q_campaigns = await db.execute(
+            select(Campaign).where(Campaign.status == "active")
         )
+        active_campaigns = q_campaigns.scalars().all()
         
-        for c_lead, lead, campaign in q_leads.all():
-            # Only simulate replies for emails sent at least 30 seconds ago
-            if not c_lead.last_sent_at:
-                continue
-            delta = datetime.datetime.now(datetime.timezone.utc) - c_lead.last_sent_at.replace(tzinfo=datetime.timezone.utc)
-            if delta.total_seconds() < 30:
-                continue
-
-            # Roll a dice: 10% chance of reply, 5% chance of bounce
-            dice = random.random()
-            
-            if dice < 0.10: # Reply received!
-                c_lead.status = "replied"
-                c_lead.next_follow_up_at = None
-                lead.status = "replied"
-                
-                await db.commit()
-                
-                # Fetch user details to get telegram bot config
-                q_user = await db.execute(
-                    select(User).where(User.id == campaign.user_id)
-                )
-                user = q_user.scalars().first()
-                
-                if user:
-                    message_text = (
-                        f"💬 <b>New Reply Received!</b>\n\n"
-                        f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
-                        f"Company: {lead.company or '-'}\n"
-                        f"Campaign: <b>{campaign.name}</b>\n\n"
-                        f"<i>\"Thanks for reaching out! I would love to connect and jump on a call next Wednesday.\"</i>"
-                    )
-                    await send_telegram_notification(user, message_text)
-                    
-            elif dice < 0.15: # Bounce received!
-                c_lead.status = "bounced"
-                c_lead.next_follow_up_at = None
-                lead.status = "bounced"
-                
-                await db.commit()
-
-                # Fetch user details
-                q_user = await db.execute(
-                    select(User).where(User.id == campaign.user_id)
-                )
-                user = q_user.scalars().first()
-                
-                if user:
-                    message_text = (
-                        f"❌ <b>Outreach Email Bounced!</b>\n\n"
-                        f"Lead: <b>{lead.name or 'Prospect'}</b> ({lead.email})\n"
-                        f"Campaign: <b>{campaign.name}</b>\n"
-                        f"Status: Undeliverable address."
-                    )
-                    await send_telegram_notification(user, message_text)
-                    
-                # Evaluate Campaign Bounce Safety Limits (Auto-pause if > 10% on active leads)
-                c_leads_q = await db.execute(
-                    select(CampaignLead.status, func.count(CampaignLead.id))
-                    .where(CampaignLead.campaign_id == campaign.id)
-                    .group_by(CampaignLead.status)
-                )
-                status_counts = dict(c_leads_q.all())
-                total = sum(status_counts.values())
-                sent = status_counts.get("sent", 0) + status_counts.get("opened", 0) + status_counts.get("replied", 0) + status_counts.get("bounced", 0)
-                bounced = status_counts.get("bounced", 0)
-                
-                bounce_rate = (bounced / sent) * 100 if sent > 0 else 0
-                if bounce_rate > 10.0:
-                    campaign.status = "paused"
-                    await db.commit()
-                    if user:
-                        pause_text = (
-                            f"⚠️ <b>Campaign Auto-Paused!</b>\n\n"
-                            f"Campaign: <b>{campaign.name}</b> has exceeded the 10% bounce safety threshold.\n"
-                            f"Current Bounce Rate: <b>{bounce_rate:.1f}%</b> ({bounced} bounces out of {sent} sent).\n"
-                            f"Action Required: Clean your email list and verify MX records before resuming."
+        # Collect unique email accounts (mailboxes) associated with active campaigns
+        mailboxes_to_check = set()
+        for campaign in active_campaigns:
+            if campaign.email_account_id:
+                mailboxes_to_check.add(campaign.email_account_id)
+            if campaign.rotate_mailboxes:
+                # Add all active mailboxes of this user
+                q_user_boxes = await db.execute(
+                    select(EmailAccount).where(
+                        and_(
+                            EmailAccount.user_id == campaign.user_id,
+                            EmailAccount.is_active == True
                         )
-                        await send_telegram_notification(user, pause_text)
+                    )
+                )
+                for box in q_user_boxes.scalars().all():
+                    mailboxes_to_check.add(box.id)
+                    
+        if not mailboxes_to_check:
+            logger.info("No active mailboxes to check for replies/bounces.")
+            return
+            
+        q_boxes = await db.execute(
+            select(EmailAccount).where(EmailAccount.id.in_(list(mailboxes_to_check)))
+        )
+        mailboxes = q_boxes.scalars().all()
+        
+        for mailbox in mailboxes:
+            is_mock = (
+                not mailbox.access_token
+                or mailbox.access_token.startswith("mock-")
+                or mailbox.access_token == "mock-token"
+            )
+            
+            if is_mock:
+                await simulate_replies_and_bounces_for_mailbox(mailbox, db)
+            else:
+                try:
+                    await check_real_replies_and_bounces(mailbox, db)
+                except Exception as e:
+                    logger.error(f"Error checking real replies/bounces for {mailbox.from_email}: {e}")
 
 async def send_daily_reports_job():
     """Calculates daily outreach stats and sends Telegram reports to active users."""

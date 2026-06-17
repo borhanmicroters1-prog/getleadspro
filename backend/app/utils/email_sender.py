@@ -6,6 +6,7 @@ import httpx
 from email.mime.text import MIMEText
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from typing import Optional
 from app.models import EmailAccount
 
 logger = logging.getLogger("email_sender")
@@ -17,10 +18,14 @@ def send_gmail_smtp_sync(
     subject: str,
     body: str,
     app_password: str,
-    headers: dict = None
+    headers: dict = None,
+    is_html: bool = False
 ) -> bool:
     """Synchronous function to send email using Gmail SMTP and App Password."""
-    mime = MIMEText(body)
+    if is_html:
+        mime = MIMEText(body, "html")
+    else:
+        mime = MIMEText(body)
     mime["to"] = to_email
     mime["from"] = f"{from_name} <{from_email}>"
     mime["subject"] = subject
@@ -43,10 +48,14 @@ def send_outlook_smtp_sync(
     subject: str,
     body: str,
     app_password: str,
-    headers: dict = None
+    headers: dict = None,
+    is_html: bool = False
 ) -> bool:
     """Synchronous function to send email using Outlook SMTP and App Password."""
-    mime = MIMEText(body)
+    if is_html:
+        mime = MIMEText(body, "html")
+    else:
+        mime = MIMEText(body)
     mime["to"] = to_email
     mime["from"] = f"{from_name} <{from_email}>"
     mime["subject"] = subject
@@ -69,7 +78,8 @@ def send_webmail_smtp_sync(
     subject: str,
     body: str,
     config_json: str,
-    headers: dict = None
+    headers: dict = None,
+    is_html: bool = False
 ) -> bool:
     """Synchronous function to send email using custom Webmail SMTP configurations."""
     import json
@@ -78,7 +88,10 @@ def send_webmail_smtp_sync(
     smtp_port = int(config["smtp_port"])
     password = config["password"]
 
-    mime = MIMEText(body)
+    if is_html:
+        mime = MIMEText(body, "html")
+    else:
+        mime = MIMEText(body)
     mime["to"] = to_email
     mime["from"] = f"{from_name} <{from_email}>"
     mime["subject"] = subject
@@ -100,7 +113,8 @@ async def send_email(
     subject: str,
     body: str,
     db: AsyncSession,
-    headers: dict = None
+    headers: dict = None,
+    campaign_lead_id: Optional[str] = None
 ) -> bool:
     """
     Sends an email using Gmail, Brevo, Outlook or custom Webmail credentials.
@@ -118,11 +132,29 @@ async def send_email(
         or token == "mock-token"
     )
 
+    # Inject tracking pixel if campaign_lead_id is present
+    is_html = False
+    html_body = body
+    if campaign_lead_id:
+        from app.config import settings
+        tracking_url = f"{settings.BACKEND_URL}/api/automation/track/open/{campaign_lead_id}"
+        # Convert text body to HTML if not already HTML
+        is_body_html = "<html" in body.lower() or "<body" in body.lower() or "<p" in body.lower() or "<br" in body.lower()
+        if not is_body_html:
+            html_body = body.replace("\n", "<br/>")
+        
+        pixel_tag = f'<img src="{tracking_url}" width="1" height="1" style="display:none !important;" alt="" />'
+        if "</body>" in html_body:
+            html_body = html_body.replace("</body>", f"{pixel_tag}</body>")
+        else:
+            html_body = f"{html_body}{pixel_tag}"
+        is_html = True
+
     if is_mock:
         logger.info(
             f"[MOCK EMAIL SEND] From: {from_name} <{from_email}> | To: {to_email} | "
             f"Subject: {subject} | Provider: {provider.upper()} | Headers: {headers}\n"
-            f"Body preview: {body[:100]}..."
+            f"Body preview: {html_body[:100]}..."
         )
         return True
 
@@ -143,8 +175,12 @@ async def send_email(
                 }
             ],
             "subject": subject,
-            "textContent": body
         }
+        if is_html:
+            payload["htmlContent"] = html_body
+        else:
+            payload["textContent"] = body
+
         if headers:
             payload["headers"] = headers
 
@@ -169,9 +205,10 @@ async def send_email(
                 from_email,
                 to_email,
                 subject,
-                body,
+                html_body if is_html else body,
                 token,
-                headers
+                headers,
+                is_html
             )
             if success:
                 logger.info(f"Gmail SMTP email sent to {to_email}")
@@ -189,9 +226,10 @@ async def send_email(
                 from_email,
                 to_email,
                 subject,
-                body,
+                html_body if is_html else body,
                 token,
-                headers
+                headers,
+                is_html
             )
             if success:
                 logger.info(f"Outlook SMTP email sent to {to_email}")
@@ -209,9 +247,10 @@ async def send_email(
                 from_email,
                 to_email,
                 subject,
-                body,
+                html_body if is_html else body,
                 token,
-                headers
+                headers,
+                is_html
             )
             if success:
                 logger.info(f"Webmail SMTP email sent to {to_email}")

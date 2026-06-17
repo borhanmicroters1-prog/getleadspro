@@ -118,21 +118,7 @@ export default function BlacklistPage() {
     formData.append("file", csvFile);
 
     try {
-      const token = auth.getToken();
-      const response = await fetch("http://localhost:8000/api/blacklist/import", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errJson = await response.json();
-        throw new Error(errJson.detail || "CSV processing failed.");
-      }
-
-      const result = await response.json();
+      const result = await api.post("/api/blacklist/import", formData, { isMultipart: true });
       setSuccess(result.message || "CSV entries imported successfully.");
       setCsvFile(null);
       // Reset input element

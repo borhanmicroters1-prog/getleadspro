@@ -7,28 +7,29 @@ function UnsubscribeContent() {
   const searchParams = useSearchParams();
   const leadId = searchParams.get("lead_id") || searchParams.get("token");
 
-  const [loading, setLoading] = useState(true);
-  const [successMsg, setSuccessMsg] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(!!leadId);
+  const [errorMsg, setErrorMsg] = useState(
+    leadId ? "" : "Invalid unsubscribe link. Please check your email link details."
+  );
 
   useEffect(() => {
     if (!leadId) {
-      setLoading(false);
-      setErrorMsg("Invalid unsubscribe link. Please check your email link details.");
       return;
     }
 
     const triggerUnsubscribe = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/automation/unsubscribe/${leadId}`);
+        const apiBaseUrl = typeof window !== "undefined" && window.location.hostname !== "localhost"
+          ? "/api/proxy"
+          : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+        const res = await fetch(`${apiBaseUrl}/api/automation/unsubscribe/${leadId}`);
         if (!res.ok) {
           const errJson = await res.json();
           throw new Error(errJson.detail || "Opt-out request failed.");
         }
-        const data = await res.json();
-        setSuccessMsg(data.message || "You have been successfully unsubscribed.");
-      } catch (err: any) {
-        setErrorMsg(err.message || "Failed to process unsubscribe request.");
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        setErrorMsg(error.message || "Failed to process unsubscribe request.");
       } finally {
         setLoading(false);
       }

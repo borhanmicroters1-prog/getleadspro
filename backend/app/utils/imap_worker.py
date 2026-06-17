@@ -257,3 +257,146 @@ async def process_incoming_warmups(account: EmailAccount, db: AsyncSession):
             log.replies_sent += 1
             await db.commit()
             logger.info(f"Sent warm-up reply from {email_address} to {recipient}")
+
+
+def get_email_body_snippet(msg) -> str:
+    """Helper to extract a plain text snippet from email message parts."""
+    body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            content_type = part.get_content_type()
+            content_disposition = str(part.get("Content-Disposition"))
+            if content_type == "text/plain" and "attachment" not in content_disposition:
+                try:
+                    payload = part.get_payload(decode=True)
+                    body = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
+                    break
+                except Exception:
+                    pass
+    else:
+        try:
+            payload = msg.get_payload(decode=True)
+            body = payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+        except Exception:
+            pass
+            
+    # Clean up and return first 200 chars
+    body_clean = " ".join(body.split())
+    return body_clean[:200]
+
+
+def run_real_imap_replies_and_bounces_sync(provider: str, email_address: str, app_password_or_config: str, active_outreach_emails: list):
+    detected_replies = []
+    detected_bounces = []
+    
+    # Establish IMAP server connection
+    imap_server = None
+    imap_port = 993
+    password = app_password_or_config
+    
+    provider = provider.strip().lower()
+    if provider == "gmail":
+        imap_server = "imap.gmail.com"
+    elif provider == "outlook":
+        imap_server = "outlook.office365.com"
+    elif provider == "webmail":
+        try:
+            import json
+            config = json.loads(app_password_or_config)
+            imap_server = config["imap_host"]
+            imap_port = int(config.get("imap_port", 993))
+            password = config["password"]
+        except Exception as e:
+            logger.error(f"Failed to parse webmail config for IMAP of {email_address}: {e}")
+            return detected_replies, detected_bounces
+    else:
+        logger.error(f"Unsupported IMAP provider: {provider}")
+        return detected_replies, detected_bounces
+
+    try:
+        if imap_port == 993:
+            mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        else:
+            mail = imaplib.IMAP4(imap_server, imap_port)
+        mail.login(email_address, password)
+    except Exception as e:
+        logger.error(f"IMAP login failed for {email_address} ({provider}): {str(e)}")
+        return detected_replies, detected_bounces
+
+    try:
+        # Check INBOX for unseen emails
+        mail.select("INBOX")
+        status, data = mail.search(None, "UNSEEN")
+        if status == "OK" and data[0]:
+            msg_ids = data[0].split()
+            # Check latest 30 unseen emails
+            latest_ids = msg_ids[-30:]
+            for msg_id in latest_ids:
+                status, msg_data = mail.fetch(msg_id, "(RFC822)")
+                if status == "OK" and msg_data[0]:
+                    raw_email = msg_data[0][1]
+                    msg = email.message_from_bytes(raw_email)
+                    
+                    # Parse subject, from, message-id
+                    subject = clean_header(msg.get("Subject"))
+                    from_header = clean_header(msg.get("From"))
+                    from_email = email.utils.parseaddr(from_header)[1]
+                    
+                    # Heuristic to check if bounce
+                    is_bounce_sender = any(x in from_email.lower() for x in ["mailer-daemon", "postmaster", "mail-daemon"])
+                    is_bounce_subj = any(x in subject.lower() for x in ["delivery status notification", "undeliverable", "returned mail", "failure notice"])
+                    
+                    if is_bounce_sender or is_bounce_subj:
+                        # Extract target email from header or body
+                        failed_recipient = msg.get("X-Failed-Recipients")
+                        if failed_recipient:
+                            failed_recipient = email.utils.parseaddr(failed_recipient)[1]
+                            
+                        # If not in header, search body
+                        if not failed_recipient or failed_recipient.lower() not in active_outreach_emails:
+                            # Search body text for any active outreach emails
+                            body_text = ""
+                            if msg.is_multipart():
+                                for part in msg.walk():
+                                    if part.get_content_type() in ["text/plain", "text/html"]:
+                                        try:
+                                            body_text += part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", errors="ignore")
+                                        except:
+                                            pass
+                            else:
+                                try:
+                                    body_text = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", errors="ignore")
+                                except:
+                                    pass
+                                    
+                            body_text_lower = body_text.lower()
+                            for email_addr in active_outreach_emails:
+                                if email_addr in body_text_lower:
+                                    failed_recipient = email_addr
+                                    break
+                                    
+                        if failed_recipient and failed_recipient.lower() in active_outreach_emails:
+                            detected_bounces.append(failed_recipient)
+                            # Mark bounce email as read
+                            mail.store(msg_id, "+FLAGS", "\\Seen")
+                            
+                    elif from_email.lower() in active_outreach_emails:
+                        # Lead replied!
+                        body_snippet = get_email_body_snippet(msg)
+                        detected_replies.append({
+                            "email": from_email,
+                            "subject": subject,
+                            "body_snippet": body_snippet
+                        })
+                        # Mark reply email as read
+                        mail.store(msg_id, "+FLAGS", "\\Seen")
+    except Exception as e:
+        logger.error(f"Error checking real replies/bounces in IMAP for {email_address}: {str(e)}")
+    finally:
+        try:
+            mail.close()
+            mail.logout()
+        except:
+            pass
+            
+    return detected_replies, detected_bounces
