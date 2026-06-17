@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_
@@ -7,13 +8,17 @@ import uuid
 
 from app.database import get_db
 from app.models import CampaignLead, Lead, Blacklist, Campaign
+from app.config import settings
+from app.utils.rate_limiter import rate_limit_unsubscribe, rate_limit_open_tracking
 
 router = APIRouter(prefix="/api/automation", tags=["Automation"])
 
 @router.get("/unsubscribe/{campaign_lead_id}")
 async def unsubscribe_recipient(
     campaign_lead_id: str,
-    db: AsyncSession = Depends(get_db)
+    redirect: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(rate_limit_unsubscribe)
 ):
     """
     Public unauthenticated endpoint to unsubscribe a recipient.
@@ -24,6 +29,11 @@ async def unsubscribe_recipient(
     try:
         uuid.UUID(campaign_lead_id)
     except ValueError:
+        if redirect:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/unsubscribe?status=error&msg=Invalid unsubscribe link format.",
+                status_code=status.HTTP_307_TEMPORARY_REDIRECT
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid unsubscribe link format."
@@ -43,6 +53,11 @@ async def unsubscribe_recipient(
         c_lead = q_c_lead_fallback.scalars().first()
 
     if not c_lead:
+        if redirect:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/unsubscribe?status=error&msg=Unsubscribe record not found.",
+                status_code=status.HTTP_307_TEMPORARY_REDIRECT
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Unsubscribe record not found."
@@ -54,6 +69,11 @@ async def unsubscribe_recipient(
     )
     lead = q_lead.scalars().first()
     if not lead:
+        if redirect:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/unsubscribe?status=error&msg=Associated contact not found.",
+                status_code=status.HTTP_307_TEMPORARY_REDIRECT
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated contact not found."
@@ -65,6 +85,11 @@ async def unsubscribe_recipient(
     )
     campaign = q_campaign.scalars().first()
     if not campaign:
+        if redirect:
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/unsubscribe?status=error&msg=Associated campaign not found.",
+                status_code=status.HTTP_307_TEMPORARY_REDIRECT
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated campaign not found."
@@ -95,6 +120,13 @@ async def unsubscribe_recipient(
         db.add(blacklist_entry)
 
     await db.commit()
+
+    if redirect:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/unsubscribe?lead_id={campaign_lead_id}&status=unsubscribed",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+        )
+
     return {
         "message": "You have been successfully unsubscribed.",
         "email": lead.email
@@ -104,7 +136,8 @@ async def unsubscribe_recipient(
 @router.get("/track/open/{campaign_lead_id}")
 async def track_email_open(
     campaign_lead_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(rate_limit_open_tracking)
 ):
     """
     Public unauthenticated endpoint to track email opens using a 1x1 transparent tracking pixel.

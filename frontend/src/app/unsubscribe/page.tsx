@@ -6,14 +6,18 @@ import { useSearchParams } from "next/navigation";
 function UnsubscribeContent() {
   const searchParams = useSearchParams();
   const leadId = searchParams.get("lead_id") || searchParams.get("token");
+  const statusParam = searchParams.get("status");
+  const errorMsgParam = searchParams.get("msg");
 
-  const [loading, setLoading] = useState(!!leadId);
+  const [loading, setLoading] = useState(statusParam !== "unsubscribed" && statusParam !== "error" && !!leadId);
   const [errorMsg, setErrorMsg] = useState(
-    leadId ? "" : "Invalid unsubscribe link. Please check your email link details."
+    statusParam === "error" 
+      ? (errorMsgParam || "Opt-out request failed.")
+      : (leadId || statusParam === "unsubscribed" ? "" : "Invalid unsubscribe link. Please check your email link details.")
   );
 
   useEffect(() => {
-    if (!leadId) {
+    if (!leadId || statusParam === "unsubscribed" || statusParam === "error") {
       return;
     }
 

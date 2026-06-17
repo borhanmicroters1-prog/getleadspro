@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     SUPABASE_PROJECT_ID: str = "grdqjnazfdznbviopmxf"
     SUPER_ADMIN_EMAIL: str = "admin@getleads.com"
     CRON_SECRET: str = "super-secret-cron-key-for-local-testing"
+    ENCRYPTION_KEY: str = ""
     
     # Scraper API Keys
     GOOGLE_MAPS_API_KEY: str = ""

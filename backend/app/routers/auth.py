@@ -93,6 +93,7 @@ class SettingsUpdate(BaseModel):
     avatar: Optional[str] = None
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    custom_tracking_domain: Optional[str] = None
 
 
 @router.put("/me")
@@ -115,6 +116,8 @@ async def update_settings(
         user.telegram_bot_token = request.telegram_bot_token.strip() or None
     if request.telegram_chat_id is not None:
         user.telegram_chat_id = request.telegram_chat_id.strip() or None
+    if request.custom_tracking_domain is not None:
+        user.custom_tracking_domain = request.custom_tracking_domain.strip().lower() or None
 
     await db.commit()
     await db.refresh(user)

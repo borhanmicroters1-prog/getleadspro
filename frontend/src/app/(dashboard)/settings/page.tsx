@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [avatar, setAvatar] = useState("");
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
+  const [customTrackingDomain, setCustomTrackingDomain] = useState("");
 
   // UI States
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -42,6 +43,7 @@ export default function SettingsPage() {
       setAvatar(data.avatar || "");
       setTelegramToken(data.telegram_bot_token || "");
       setTelegramChatId(data.telegram_chat_id || "");
+      setCustomTrackingDomain(data.custom_tracking_domain || "");
     } catch (err: any) {
       setError(err.message || "Failed to load profile details.");
     }
@@ -66,6 +68,7 @@ export default function SettingsPage() {
         avatar,
         telegram_bot_token: telegramToken,
         telegram_chat_id: telegramChatId,
+        custom_tracking_domain: customTrackingDomain,
       });
 
       // Update auth store with updated profile details
@@ -175,6 +178,20 @@ export default function SettingsPage() {
                     style={{ backgroundColor: "hsl(var(--bg-primary) / 40%)", color: "hsl(var(--text-muted))", cursor: "not-allowed" }} 
                     disabled 
                   />
+                </div>
+
+                <div style={inputGroupStyle}>
+                  <label style={labelStyle}>Custom Tracking Domain (CNAME)</label>
+                  <input 
+                    type="text" 
+                    value={customTrackingDomain} 
+                    onChange={(e) => setCustomTrackingDomain(e.target.value)} 
+                    placeholder="e.g. track.yourcompany.com" 
+                    className="input-field" 
+                  />
+                  <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "-0.25rem" }}>
+                    Point a CNAME record from this subdomain to your backend API domain to brand your open-tracking and unsubscribe links.
+                  </span>
                 </div>
 
                 <div style={readOnlyRowStyle}>

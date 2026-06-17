@@ -8,6 +8,7 @@ export interface UserProfile {
   plan: string;
   credits: number;
   is_admin?: boolean;
+  custom_tracking_domain?: string;
 }
 
 const STORAGE_KEY = "getleads_session";
@@ -73,6 +74,7 @@ if (typeof window !== "undefined" && supabase) {
           userProfile.plan = dbUser.plan || userProfile.plan;
           userProfile.credits = dbUser.credits !== undefined ? dbUser.credits : userProfile.credits;
           userProfile.is_admin = dbUser.is_admin !== undefined ? dbUser.is_admin : userProfile.is_admin;
+          userProfile.custom_tracking_domain = dbUser.custom_tracking_domain || "";
         }
       } catch (e) {
         // Non-fatal: backend sync failed, continue with Supabase profile data

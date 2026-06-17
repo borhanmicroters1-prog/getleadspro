@@ -167,16 +167,46 @@ async def send_email(
         or token == "mock-token"
     )
 
-    # Inject tracking pixel if campaign_lead_id is present
+    # Inject tracking pixel and unsubscribe link if campaign_lead_id is present
     is_html = False
     html_body = body
+
+    # Resolve custom tracking domain or default backend url
+    custom_tracking_domain = None
+    if campaign_lead_id or "{{unsubscribe_link}}" in html_body or "{{unsubscribe_link}}" in body:
+        from app.models import User
+        try:
+            q_user = await db.execute(select(User).where(User.id == email_account.user_id))
+            user = q_user.scalars().first()
+            if user and user.custom_tracking_domain:
+                custom_tracking_domain = user.custom_tracking_domain.strip().lower()
+        except Exception as e:
+            logger.error(f"Error loading user for custom tracking domain: {e}")
+
+    from app.config import settings
+    base_url = settings.BACKEND_URL
+    if custom_tracking_domain:
+        if custom_tracking_domain.startswith("http://") or custom_tracking_domain.startswith("https://"):
+            base_url = custom_tracking_domain
+        else:
+            proto = "https://" if settings.BACKEND_URL.startswith("https://") else "http://"
+            base_url = f"{proto}{custom_tracking_domain}"
+
+    # Replace unsubscribe placeholder if present
     if campaign_lead_id:
-        from app.config import settings
-        tracking_url = f"{settings.BACKEND_URL}/api/automation/track/open/{campaign_lead_id}"
+        unsub_url = f"{base_url}/api/automation/unsubscribe/{campaign_lead_id}?redirect=true"
+    else:
+        unsub_url = f"{settings.FRONTEND_URL}/unsubscribe"
+
+    html_body = html_body.replace("{{unsubscribe_link}}", unsub_url)
+    body = body.replace("{{unsubscribe_link}}", unsub_url)
+
+    if campaign_lead_id:
+        tracking_url = f"{base_url}/api/automation/track/open/{campaign_lead_id}"
         # Convert text body to HTML if not already HTML
         is_body_html = "<html" in body.lower() or "<body" in body.lower() or "<p" in body.lower() or "<br" in body.lower()
         if not is_body_html:
-            html_body = body.replace("\n", "<br/>")
+            html_body = html_body.replace("\n", "<br/>")
         
         pixel_tag = f'<img src="{tracking_url}" width="1" height="1" style="display:none !important;" alt="" />'
         if "</body>" in html_body:

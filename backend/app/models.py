@@ -35,6 +35,25 @@ class GUID(TypeDecorator):
             return value
         return str(value)
 
+class EncryptedString(TypeDecorator):
+    """SQLAlchemy TypeDecorator that encrypts values before storing them in the database
+    and decrypts them when loading them.
+    """
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        from app.utils.encryption import encrypt
+        return encrypt(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        from app.utils.encryption import decrypt
+        return decrypt(value)
+
 Base = declarative_base()
 
 def utc_now():
@@ -54,6 +73,7 @@ class User(Base):
     telegram_chat_id = Column(String(255), nullable=True)
     telegram_bot_token = Column(String(255), nullable=True)
     is_admin = Column(Boolean, default=False)
+    custom_tracking_domain = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
@@ -76,6 +96,7 @@ class User(Base):
             "telegram_chat_id": self.telegram_chat_id,
             "telegram_bot_token": self.telegram_bot_token,
             "is_admin": self.is_admin,
+            "custom_tracking_domain": self.custom_tracking_domain,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -184,8 +205,8 @@ class EmailAccount(Base):
     id = Column(GUID, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     provider = Column(String(50), nullable=False)  # gmail, brevo
-    access_token = Column(String(500), nullable=True)
-    refresh_token = Column(String(500), nullable=True)
+    access_token = Column(EncryptedString(2000), nullable=True)
+    refresh_token = Column(EncryptedString(2000), nullable=True)
     from_email = Column(String(255), nullable=False)
     from_name = Column(String(255), nullable=True)
     daily_limit = Column(Integer, default=50)
