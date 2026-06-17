@@ -16,6 +16,9 @@ class CampaignCreate(BaseModel):
   name: str
   email_account_id: Optional[str] = None
   rotate_mailboxes: bool = True
+  rotate_mailbox_ids: Optional[str] = None
+  ai_model: Optional[str] = "claude-3.5-sonnet"
+  ai_prompt_template: Optional[str] = None
   lead_ids: List[str] = []
   subject_a: Optional[str] = None
   subject_b: Optional[str] = None
@@ -36,6 +39,9 @@ class CampaignUpdate(BaseModel):
   name: Optional[str] = None
   email_account_id: Optional[str] = None
   rotate_mailboxes: Optional[bool] = None
+  rotate_mailbox_ids: Optional[str] = None
+  ai_model: Optional[str] = None
+  ai_prompt_template: Optional[str] = None
   subject_a: Optional[str] = None
   subject_b: Optional[str] = None
   body_template: Optional[str] = None
@@ -109,6 +115,9 @@ async def create_campaign(
     status=request.status,
     email_account_id=request.email_account_id,
     rotate_mailboxes=request.rotate_mailboxes,
+    rotate_mailbox_ids=request.rotate_mailbox_ids,
+    ai_model=request.ai_model,
+    ai_prompt_template=request.ai_prompt_template,
     subject_a=request.subject_a,
     subject_b=request.subject_b,
     body_template=request.body_template,

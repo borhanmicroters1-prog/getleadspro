@@ -45,6 +45,7 @@ export default function NewCampaignPage() {
   // Step 1: Setup
   const [campaignName, setCampaignName] = useState("");
   const [selectedMailboxId, setSelectedMailboxId] = useState("");
+  const [selectedMailboxIds, setSelectedMailboxIds] = useState<string[]>([]);
   const [rotateMailboxes, setRotateMailboxes] = useState(true);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
 
@@ -53,7 +54,22 @@ export default function NewCampaignPage() {
   const [bodyTemplate, setBodyTemplate] = useState("");
   
   // AI Personalizer overlay state
-  const [aiProvider, setAiProvider] = useState("claude");
+  const [aiModel, setAiModel] = useState("claude-3.5-sonnet");
+  const [aiPromptTemplate, setAiPromptTemplate] = useState(`Write a personalized cold email outreach draft for the following prospect:
+Name: {{name}}
+Company: {{company}}
+Website: {{website}}
+Rating: {{rating}}
+Lead Source: {{source}}
+
+Instructions: {{instructions}}
+
+You MUST return a JSON object with exactly two keys:
+1. 'subject': A catchy, click-worthy email subject line targeting this lead. Do not use generic placeholders.
+2. 'body': A short, personalized email body (under 120 words). Keep it highly natural, conversational, and professional. Do not include placeholders like [Your Name], keep the email clean.
+
+Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY the raw valid JSON payload.`);
+  const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("Keep it short, professional, and invite them to a 10-minute brainstorming session.");
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiPreviewSubj, setAiPreviewSubj] = useState("");
@@ -142,6 +158,12 @@ export default function NewCampaignPage() {
     );
   };
 
+  const toggleMailboxSelection = (id: string) => {
+    setSelectedMailboxIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
   const handleSelectAllLeads = () => {
     if (selectedLeadIds.length === availableLeads.length) {
       setSelectedLeadIds([]);
@@ -162,7 +184,8 @@ export default function NewCampaignPage() {
       const result = await api.post("/api/emails/generate", {
         lead_id: selectedLeadIds[0],
         prompt_instruction: aiInstruction,
-        provider: aiProvider
+        prompt_template: showCustomPrompt ? aiPromptTemplate : undefined,
+        model: aiModel
       });
       setAiPreviewSubj(result.subject || "");
       setAiPreviewBody(result.body || "");
@@ -205,13 +228,21 @@ export default function NewCampaignPage() {
       return;
     }
 
+    if (rotateMailboxes && selectedMailboxIds.length === 0) {
+      setError("Please select at least one mailbox to rotate emails.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
 
     const payload = {
       name: campaignName,
-      email_account_id: selectedMailboxId || null,
+      email_account_id: rotateMailboxes ? null : (selectedMailboxId || null),
       rotate_mailboxes: rotateMailboxes,
+      rotate_mailbox_ids: rotateMailboxes ? selectedMailboxIds.join(",") : null,
+      ai_model: aiModel,
+      ai_prompt_template: showCustomPrompt ? aiPromptTemplate : null,
       lead_ids: selectedLeadIds,
       subject_a: subjectA,
       subject_b: enableABTest ? subjectB : null,
@@ -356,18 +387,49 @@ export default function NewCampaignPage() {
                   <label style={labelStyle}>Sending Mailbox</label>
                   {mailboxes.length > 0 ? (
                     <>
-                      <select 
-                        value={selectedMailboxId}
-                        onChange={(e) => setSelectedMailboxId(e.target.value)}
-                        className="input-field"
-                        style={{ cursor: "pointer" }}
-                      >
-                        {mailboxes.map(mb => (
-                          <option key={mb.id} value={mb.id}>
-                            {mb.from_name} ({mb.from_email}) [{mb.provider.toUpperCase()}]
-                          </option>
-                        ))}
-                      </select>
+                      {rotateMailboxes ? (
+                        <div style={mailboxMultiSelectContainerStyle}>
+                          {mailboxes.map(mb => {
+                            const isChecked = selectedMailboxIds.includes(mb.id);
+                            return (
+                              <div 
+                                key={mb.id} 
+                                style={{
+                                  ...mailboxMultiSelectRowStyle,
+                                  backgroundColor: isChecked ? "hsl(var(--accent) / 8%)" : "transparent",
+                                  borderColor: isChecked ? "hsl(var(--accent) / 30%)" : "var(--glass-border)"
+                                }}
+                                onClick={() => toggleMailboxSelection(mb.id)}
+                              >
+                                <input 
+                                  type="checkbox" 
+                                  checked={isChecked} 
+                                  onChange={() => {}} // handled by click on row
+                                  style={checkboxStyle}
+                                />
+                                <div style={{ display: "flex", flexDirection: "column" }}>
+                                  <span style={{ fontSize: "13px", fontWeight: 600, color: "hsl(var(--text-primary))" }}>{mb.from_name}</span>
+                                  <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))" }}>{mb.from_email} [{mb.provider.toUpperCase()}]</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <select 
+                          value={selectedMailboxId}
+                          onChange={(e) => setSelectedMailboxId(e.target.value)}
+                          className="input-field"
+                          style={{ cursor: "pointer" }}
+                        >
+                          {mailboxes.map(mb => (
+                            <option key={mb.id} value={mb.id}>
+                              {mb.from_name} ({mb.from_email}) [{mb.provider.toUpperCase()}]
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      
                       <div style={{ ...checkboxWrapperStyle, marginTop: "0.5rem" }}>
                         <input 
                           type="checkbox" 
@@ -377,7 +439,7 @@ export default function NewCampaignPage() {
                           style={checkboxStyle}
                         />
                         <label htmlFor="rotateMailboxes" style={checkboxLabelStyle}>
-                          Auto-rotate mailboxes when daily limit is reached
+                          Auto-rotate between selected mailboxes (Smart Mailbox Rotation)
                         </label>
                       </div>
                     </>
@@ -499,6 +561,48 @@ export default function NewCampaignPage() {
                 <h3 style={panelTitleStyle}>🤖 AI Personalizer Assistant</h3>
                 <div style={aiFormStyle}>
 
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>AI Model Selection</label>
+                    <select 
+                      value={aiModel}
+                      onChange={(e) => setAiModel(e.target.value)}
+                      className="input-field"
+                      style={{ cursor: "pointer", fontSize: "0.85rem" }}
+                    >
+                      <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                      <option value="gpt-4o">GPT-4o</option>
+                      <option value="gemini-pro">Gemini Pro</option>
+                    </select>
+                  </div>
+
+                  <div style={inputGroupStyle}>
+                    <div style={checkboxWrapperStyle}>
+                      <input 
+                        type="checkbox" 
+                        id="customPromptToggle" 
+                        checked={showCustomPrompt} 
+                        onChange={(e) => setShowCustomPrompt(e.target.checked)} 
+                        style={checkboxStyle}
+                      />
+                      <label htmlFor="customPromptToggle" style={checkboxLabelStyle}>
+                        Customize System Prompt Template
+                      </label>
+                    </div>
+                    
+                    {showCustomPrompt && (
+                      <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.5rem" }}>
+                        <textarea 
+                          value={aiPromptTemplate}
+                          onChange={(e) => setAiPromptTemplate(e.target.value)}
+                          className="input-field"
+                          style={{ height: "150px", fontSize: "0.75rem", fontFamily: "monospace", resize: "vertical" }}
+                        />
+                        <span style={{ fontSize: "10px", color: "hsl(var(--text-muted))", lineHeight: "1.4" }}>
+                          Placeholders: <code>{"{{name}}"}</code>, <code>{"{{company}}"}</code>, <code>{"{{website}}"}</code>, <code>{"{{rating}}"}</code>, <code>{"{{source}}"}</code>, <code>{"{{instructions}}"}</code>
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   <div style={inputGroupStyle}>
                     <label style={labelStyle}>Personalization Instructions</label>
@@ -1277,5 +1381,28 @@ const calculatorNoteStyle: React.CSSProperties = {
   color: "hsl(var(--text-muted))",
   fontStyle: "italic",
   margin: 0,
+};
+
+const mailboxMultiSelectContainerStyle: React.CSSProperties = {
+  maxHeight: "150px",
+  overflowY: "auto",
+  border: "1px solid var(--glass-border)",
+  borderRadius: "8px",
+  padding: "0.5rem",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.4rem",
+  backgroundColor: "hsl(var(--bg-secondary) / 50%)",
+};
+
+const mailboxMultiSelectRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "0.75rem",
+  padding: "0.5rem 0.75rem",
+  borderRadius: "6px",
+  cursor: "pointer",
+  border: "1px solid transparent",
+  transition: "all 0.15s ease",
 };
 

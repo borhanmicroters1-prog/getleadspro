@@ -235,6 +235,9 @@ class Campaign(Base):
     status = Column(String(50), default="draft")  # draft, active, paused, completed
     email_account_id = Column(GUID, ForeignKey("email_accounts.id", ondelete="SET NULL"), nullable=True)
     rotate_mailboxes = Column(Boolean, default=True, nullable=False)
+    rotate_mailbox_ids = Column(String(2000), nullable=True)
+    ai_model = Column(String(100), default="claude-3.5-sonnet", nullable=False)
+    ai_prompt_template = Column(String(2000), nullable=True)
     subject_a = Column(String(255), nullable=True)
     subject_b = Column(String(255), nullable=True)
     ab_winner = Column(String(50), nullable=True)
@@ -271,6 +274,7 @@ class Campaign(Base):
             "status": self.status,
             "email_account_id": self.email_account_id,
             "rotate_mailboxes": self.rotate_mailboxes,
+            "rotate_mailbox_ids": self.rotate_mailbox_ids,
             "subject_a": self.subject_a,
             "subject_b": self.subject_b,
             "ab_winner": self.ab_winner,
@@ -285,6 +289,8 @@ class Campaign(Base):
             "send_end_hour": self.send_end_hour,
             "timezone": self.timezone,
             "send_interval": self.send_interval,
+            "ai_model": self.ai_model,
+            "ai_prompt_template": self.ai_prompt_template,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,

@@ -1,6 +1,7 @@
 import datetime
 import logging
 import random
+from typing import Optional
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.future import select
@@ -31,6 +32,40 @@ def substitute_variables(text: str, lead: Lead) -> str:
     
     return text
 
+async def resolve_mailbox_for_campaign(campaign: Campaign, db) -> Optional[EmailAccount]:
+    """Resolves and returns the mailbox to use for sending, implementing smart multi-mailbox rotation."""
+    if campaign.rotate_mailboxes:
+        candidate_ids = []
+        if campaign.rotate_mailbox_ids:
+            candidate_ids = [cid.strip() for cid in campaign.rotate_mailbox_ids.split(",") if cid.strip()]
+
+        query_rot = select(EmailAccount).where(
+            and_(
+                EmailAccount.user_id == campaign.user_id,
+                EmailAccount.is_active == True,
+                EmailAccount.emails_sent_today < EmailAccount.daily_limit
+            )
+        )
+        if candidate_ids:
+            query_rot = query_rot.where(EmailAccount.id.in_(candidate_ids))
+
+        q_rot = await db.execute(query_rot)
+        eligible_mailboxes = q_rot.scalars().all()
+
+        if eligible_mailboxes:
+            # Smart Rotation: select the mailbox with the lowest sending volume today to distribute load
+            return min(eligible_mailboxes, key=lambda m: m.emails_sent_today)
+        return None
+    else:
+        if campaign.email_account_id:
+            q_mailbox = await db.execute(
+                select(EmailAccount).where(EmailAccount.id == campaign.email_account_id)
+            )
+            mailbox = q_mailbox.scalars().first()
+            if mailbox and mailbox.is_active and mailbox.emails_sent_today < mailbox.daily_limit:
+                return mailbox
+        return None
+
 async def send_emails_job():
     """Periodic job to send outbound emails for active campaigns within business hours."""
     logger.info("Running send_emails_job...")
@@ -55,30 +90,9 @@ async def send_emails_job():
                 continue
 
             # 3. Resolve Mailbox (with Rotation)
-            mailbox = None
-            if campaign.email_account_id:
-                q_mailbox = await db.execute(
-                    select(EmailAccount).where(EmailAccount.id == campaign.email_account_id)
-                )
-                mailbox = q_mailbox.scalars().first()
+            mailbox = await resolve_mailbox_for_campaign(campaign, db)
 
-            if (not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit) and campaign.rotate_mailboxes:
-                # Find another active mailbox for the user that has not hit its limit
-                q_rot = await db.execute(
-                    select(EmailAccount).where(
-                        and_(
-                            EmailAccount.user_id == campaign.user_id,
-                            EmailAccount.is_active == True,
-                            EmailAccount.emails_sent_today < EmailAccount.daily_limit
-                        )
-                    ).order_by(EmailAccount.created_at.asc())
-                )
-                rotated = q_rot.scalars().first()
-                if rotated:
-                    logger.info(f"Rotating campaign {campaign.id} ({campaign.name}) to mailbox {rotated.from_email}")
-                    mailbox = rotated
-
-            if not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit:
+            if not mailbox:
                 logger.warning(f"No available active mailbox with capacity for campaign {campaign.name} ({campaign.id}).")
                 continue
 
@@ -92,9 +106,14 @@ async def send_emails_job():
                 now_utc = datetime.datetime.now(datetime.timezone.utc)
                 if last_sent.tzinfo is None:
                     last_sent = last_sent.replace(tzinfo=datetime.timezone.utc)
-                elapsed_minutes = (now_utc - last_sent).total_seconds() / 60.0
-                if elapsed_minutes < campaign.send_interval:
-                    logger.info(f"Skipping campaign {campaign.name} ({campaign.id}): elapsed {elapsed_minutes:.1f}m < interval {campaign.send_interval}m.")
+                elapsed_seconds = (now_utc - last_sent).total_seconds()
+                
+                # Humanize intervals by randomizing target seconds between 75% and 200% of send_interval
+                base_seconds = campaign.send_interval * 60
+                random_target_seconds = random.randint(int(base_seconds * 0.75), int(base_seconds * 2.0))
+                
+                if elapsed_seconds < random_target_seconds:
+                    logger.info(f"Skipping campaign {campaign.name} ({campaign.id}): elapsed {elapsed_seconds:.1f}s < random target {random_target_seconds}s.")
                     continue
 
             # 4. Fetch pending campaign leads ordered by priority score desc
@@ -115,20 +134,8 @@ async def send_emails_job():
                 # Verify limit again during batch execution, and rotate if possible
                 if mailbox.emails_sent_today >= mailbox.daily_limit:
                     if campaign.rotate_mailboxes:
-                        q_rot = await db.execute(
-                            select(EmailAccount).where(
-                                and_(
-                                    EmailAccount.user_id == campaign.user_id,
-                                    EmailAccount.is_active == True,
-                                    EmailAccount.emails_sent_today < EmailAccount.daily_limit
-                                )
-                            ).order_by(EmailAccount.created_at.asc())
-                        )
-                        rotated = q_rot.scalars().first()
-                        if rotated:
-                            logger.info(f"Rotating campaign {campaign.id} within batch to mailbox {rotated.from_email}")
-                            mailbox = rotated
-                        else:
+                        mailbox = await resolve_mailbox_for_campaign(campaign, db)
+                        if not mailbox:
                             break
                     else:
                         break
@@ -252,30 +259,9 @@ async def check_follow_ups_job():
 
         for c_lead, lead, campaign in q_leads.all():
             # Resolve mailbox with rotation support
-            mailbox = None
-            if campaign.email_account_id:
-                q_mailbox = await db.execute(
-                    select(EmailAccount).where(EmailAccount.id == campaign.email_account_id)
-                )
-                mailbox = q_mailbox.scalars().first()
+            mailbox = await resolve_mailbox_for_campaign(campaign, db)
 
-            if (not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit) and campaign.rotate_mailboxes:
-                # Find another active mailbox for the user that has not hit its limit
-                q_rot = await db.execute(
-                    select(EmailAccount).where(
-                        and_(
-                            EmailAccount.user_id == campaign.user_id,
-                            EmailAccount.is_active == True,
-                            EmailAccount.emails_sent_today < EmailAccount.daily_limit
-                        )
-                    ).order_by(EmailAccount.created_at.asc())
-                )
-                rotated = q_rot.scalars().first()
-                if rotated:
-                    logger.info(f"Rotating follow-up sending to mailbox {rotated.from_email} for campaign {campaign.name}")
-                    mailbox = rotated
-
-            if not mailbox or not mailbox.is_active or mailbox.emails_sent_today >= mailbox.daily_limit:
+            if not mailbox:
                 logger.warning(f"No available active mailbox with capacity for follow-up on lead {lead.email} in campaign {campaign.name}.")
                 continue
 

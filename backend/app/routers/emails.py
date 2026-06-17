@@ -23,7 +23,9 @@ class EmailGenerateRequest(BaseModel):
   rating: Optional[float] = None
   source: Optional[str] = None
   prompt_instruction: Optional[str] = None
-  provider: str = "claude" # claude, chatgpt, gemini
+  prompt_template: Optional[str] = None
+  provider: Optional[str] = "claude" # fallback provider
+  model: Optional[str] = "claude-3.5-sonnet" # specific model selector (claude-3.5-sonnet, gpt-4o, gemini-pro)
 
 class SpamCheckRequest(BaseModel):
   subject: str
@@ -110,7 +112,16 @@ async def generate_email(
       rating = lead.rating
       source = lead.source
 
-  provider_lower = request.provider.lower().strip()
+  model_selected = (request.model or "").lower().strip()
+  provider_lower = (request.provider or "claude").lower().strip()
+
+  # If model is specified, override provider to match the selected model's provider
+  if "claude" in model_selected:
+      provider_lower = "claude"
+  elif "gpt" in model_selected or "chatgpt" in model_selected:
+      provider_lower = "chatgpt"
+  elif "gemini" in model_selected:
+      provider_lower = "gemini"
 
   # Resolve system API keys dynamically
   voidai_api_key = await get_system_setting(db, "VOIDAI_API_KEY")
@@ -127,23 +138,49 @@ async def generate_email(
   elif anthropic_api_key and anthropic_api_key.startswith("sk-voidai"):
     voidai_key = anthropic_api_key
 
+  # Determine models dynamically:
+  voidai_model = "claude-sonnet-4-6"
+  direct_model = "claude-3-5-sonnet-20241022"
+
+  if provider_lower == "claude":
+      voidai_model = "claude-sonnet-4-6"
+      direct_model = "claude-3-5-sonnet-20241022"
+  elif provider_lower == "gemini":
+      voidai_model = "gemini-3.5-flash"
+      direct_model = "gemini-1.5-pro" if "pro" in model_selected else "gemini-1.5-flash"
+  elif provider_lower == "chatgpt":
+      voidai_model = "gpt-4o" if ("gpt-4o" in model_selected and "mini" not in model_selected) else "gpt-4o-mini"
+      direct_model = "gpt-4o" if ("gpt-4o" in model_selected and "mini" not in model_selected) else "gpt-4o-mini"
+
   # Auto-switch to available system API key if the selected provider key is not configured
   if not voidai_key:
     if provider_lower == "claude" and not anthropic_api_key:
       if openai_api_key:
         provider_lower = "chatgpt"
+        voidai_model = "gpt-4o-mini"
+        direct_model = "gpt-4o-mini"
       elif gemini_api_key:
         provider_lower = "gemini"
+        voidai_model = "gemini-3.5-flash"
+        direct_model = "gemini-1.5-flash"
     elif provider_lower == "chatgpt" and not openai_api_key:
       if anthropic_api_key:
         provider_lower = "claude"
+        voidai_model = "claude-sonnet-4-6"
+        direct_model = "claude-3-5-sonnet-20241022"
       elif gemini_api_key:
         provider_lower = "gemini"
+        voidai_model = "gemini-3.5-flash"
+        direct_model = "gemini-1.5-flash"
     elif provider_lower == "gemini" and not gemini_api_key:
       if anthropic_api_key:
         provider_lower = "claude"
+        voidai_model = "claude-sonnet-4-6"
+        direct_model = "claude-3-5-sonnet-20241022"
       elif openai_api_key:
         provider_lower = "chatgpt"
+        voidai_model = "gpt-4o-mini"
+        direct_model = "gpt-4o-mini"
 
   # 1. Fallback Mock Checks
   use_mock = False
@@ -160,19 +197,29 @@ async def generate_email(
 
   # Prepare Prompt
   instructions = request.prompt_instruction or "Keep it short, clear, and professional. Introduce ourselves and propose a brief meeting."
-  prompt = (
-    f"Write a personalized cold email outreach draft for the following prospect:\n"
-    f"Name: {lead_name or 'Prospect'}\n"
-    f"Company: {company_name or 'their company'}\n"
-    f"Website: {website or 'Not Available'}\n"
-    f"Rating: {f'⭐ {rating}' if rating else 'Not Available'}\n"
-    f"Lead Source: {source or 'Outreach'}\n\n"
-    f"User Special Instructions: {instructions}\n\n"
-    f"You MUST return a JSON object with exactly two keys:\n"
-    f"1. 'subject': A catchy, click-worthy email subject line targeting this lead. Do not use generic placeholders.\n"
-    f"2. 'body': A short, personalized email body (under 120 words). Keep it highly natural, conversational, and professional. Do not include placeholders like [Your Name], keep the email clean.\n\n"
-    f"Do NOT output any markdown tags (like ```json), notes, explanations, or backticks. Return ONLY the raw valid JSON payload."
-  )
+  
+  if request.prompt_template:
+    prompt = request.prompt_template
+    prompt = prompt.replace("{{name}}", lead_name or "Prospect")
+    prompt = prompt.replace("{{company}}", company_name or "their company")
+    prompt = prompt.replace("{{website}}", website or "Not Available")
+    prompt = prompt.replace("{{rating}}", f"⭐ {rating}" if rating else "Not Available")
+    prompt = prompt.replace("{{source}}", source or "Outreach")
+    prompt = prompt.replace("{{instructions}}", instructions)
+  else:
+    prompt = (
+      f"Write a personalized cold email outreach draft for the following prospect:\n"
+      f"Name: {lead_name or 'Prospect'}\n"
+      f"Company: {company_name or 'their company'}\n"
+      f"Website: {website or 'Not Available'}\n"
+      f"Rating: {f'⭐ {rating}' if rating else 'Not Available'}\n"
+      f"Lead Source: {source or 'Outreach'}\n\n"
+      f"User Special Instructions: {instructions}\n\n"
+      f"You MUST return a JSON object with exactly two keys:\n"
+      f"1. 'subject': A catchy, click-worthy email subject line targeting this lead. Do not use generic placeholders.\n"
+      f"2. 'body': A short, personalized email body (under 120 words). Keep it highly natural, conversational, and professional. Do not include placeholders like [Your Name], keep the email clean.\n\n"
+      f"Do NOT output any markdown tags (like ```json), notes, explanations, or backticks. Return ONLY the raw valid JSON payload."
+    )
 
   # Execute API requests via HTTPX
   async with httpx.AsyncClient() as client:
@@ -183,30 +230,22 @@ async def generate_email(
           "Content-Type": "application/json"
         }
         
-        # Resolve model name for VoidAI
-        if provider_lower == "claude":
-          model = "claude-sonnet-4-6"
-        elif provider_lower == "gemini":
-          model = "gemini-3.5-flash"
-        else: # chatgpt / default
-          model = "gpt-4o-mini"
-          
         payload = {
-          "model": model,
+          "model": voidai_model,
           "messages": [{"role": "user", "content": prompt}]
         }
         res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
         
         # Fallback to gpt-4o-mini if the current model is not accessible under user's plan
-        if res.status_code == 400 and model != "gpt-4o-mini":
+        if res.status_code == 400 and voidai_model != "gpt-4o-mini":
           try:
             res_json = res.json()
             err_code = res_json.get("error", {}).get("code", "")
             err_msg = res_json.get("error", {}).get("message", "")
             if err_code == "invalid_model" or "does not have access to model" in err_msg.lower():
-              print(f"VoidAI model '{model}' is not accessible on user plan. Falling back to 'gpt-4o-mini'...")
-              model = "gpt-4o-mini"
-              payload["model"] = model
+              print(f"VoidAI model '{voidai_model}' is not accessible on user plan. Falling back to 'gpt-4o-mini'...")
+              voidai_model = "gpt-4o-mini"
+              payload["model"] = voidai_model
               res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
           except Exception as parse_err:
             print(f"Error parsing error response for fallback: {parse_err}")
@@ -222,7 +261,7 @@ async def generate_email(
             "content-type": "application/json"
           }
           payload = {
-            "model": "claude-3-5-sonnet-20241022",
+            "model": direct_model,
             "max_tokens": 600,
             "messages": [{"role": "user", "content": prompt}]
           }
@@ -237,7 +276,7 @@ async def generate_email(
             "Content-Type": "application/json"
           }
           payload = {
-            "model": "gpt-4o-mini",
+            "model": direct_model,
             "messages": [{"role": "user", "content": prompt}]
           }
           res = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
@@ -246,7 +285,7 @@ async def generate_email(
           result_text = res.json()["choices"][0]["message"]["content"]
 
         elif provider_lower == "gemini":
-          url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+          url = f"https://generativelanguage.googleapis.com/v1beta/models/{direct_model}:generateContent?key={gemini_api_key}"
           headers = {"Content-Type": "application/json"}
           payload = {
             "contents": [{"parts": [{"text": prompt}]}]
@@ -294,7 +333,7 @@ async def generate_email(
           ai_log = AILog(
               user_id=current_user["id"],
               provider="voidai" if voidai_key else provider_lower,
-              model=model if voidai_key else ("claude-3-5-sonnet" if provider_lower == "claude" else ("gpt-4o-mini" if provider_lower == "chatgpt" else "gemini-1.5-flash")),
+              model=voidai_model if voidai_key else direct_model,
               prompt_tokens=prompt_tokens,
               completion_tokens=completion_tokens,
               cost=cost

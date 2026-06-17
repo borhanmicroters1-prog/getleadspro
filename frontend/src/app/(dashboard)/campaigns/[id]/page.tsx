@@ -30,6 +30,10 @@ interface CampaignMetadata {
   send_start_hour: number;
   send_end_hour: number;
   timezone: string;
+  rotate_mailboxes: boolean;
+  rotate_mailbox_ids: string | null;
+  ai_model: string;
+  ai_prompt_template: string | null;
   created_at: string;
   started_at: string | null;
 }
@@ -409,6 +413,26 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                       <span style={configLabelStyle}>Sending Schedule</span>
                       <span style={configValueStyle}>
                         {formatHour(campaign.send_start_hour)} - {formatHour(campaign.send_end_hour)} ({campaign.timezone})
+                      </span>
+                    </div>
+
+                    <div style={configItemStyle}>
+                      <span style={configLabelStyle}>Mailbox Delivery Rotation</span>
+                      <span style={configValueStyle}>
+                        {campaign.rotate_mailboxes ? (
+                          <span style={{ color: "hsl(var(--success))", fontWeight: 600 }}>
+                            🔄 Active (Smart Rotation across {campaign.rotate_mailbox_ids ? campaign.rotate_mailbox_ids.split(",").length : "all"} mailboxes)
+                          </span>
+                        ) : (
+                          <span>Single mailbox setup</span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div style={configItemStyle}>
+                      <span style={configLabelStyle}>Personalization Model</span>
+                      <span style={configValueStyle}>
+                        🤖 {campaign.ai_model ? (campaign.ai_model.toUpperCase()) : "CLAUDE 3.5 SONNET"}
                       </span>
                     </div>
 
