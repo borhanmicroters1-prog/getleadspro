@@ -116,39 +116,86 @@ export default function AnalyticsPage() {
       return `${x},${y}`;
     }).join(" ");
 
+    // Generate area points for gradients
+    const firstSentX = padding;
+    const firstSentY = padding + dataHeight - (data[0].sent / maxSent) * dataHeight;
+    const lastSentX = padding + dataWidth;
+    const sentAreaPoints = `M ${firstSentX},${padding + dataHeight} L ${firstSentX},${firstSentY} ` + data.map((d, idx) => {
+      const x = padding + (idx / (data.length - 1)) * dataWidth;
+      const y = padding + dataHeight - (d.sent / maxSent) * dataHeight;
+      return `L ${x},${y}`;
+    }).join(" ") + ` L ${lastSentX},${padding + dataHeight} Z`;
+
+    const firstRepliedX = padding;
+    const firstRepliedY = padding + dataHeight - ((data[0].replied * 5) / maxSent) * dataHeight;
+    const lastRepliedX = padding + dataWidth;
+    const repliedAreaPoints = `M ${firstRepliedX},${padding + dataHeight} L ${firstRepliedX},${firstRepliedY} ` + data.map((d, idx) => {
+      const x = padding + (idx / (data.length - 1)) * dataWidth;
+      const y = padding + dataHeight - ((d.replied * 5) / maxSent) * dataHeight;
+      return `L ${x},${y}`;
+    }).join(" ") + ` L ${lastRepliedX},${padding + dataHeight} Z`;
+
     return (
       <svg width="100%" height="220" viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={{ overflow: "visible" }}>
+        <defs>
+          <linearGradient id="sentAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity="0.00" />
+          </linearGradient>
+          <linearGradient id="repliedAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--accent-cyan))" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="hsl(var(--accent-cyan))" stopOpacity="0.00" />
+          </linearGradient>
+          <filter id="sentGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="hsl(var(--accent))" floodOpacity="0.25" />
+          </filter>
+          <filter id="repliedGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="hsl(var(--accent-cyan))" floodOpacity="0.25" />
+          </filter>
+        </defs>
+
         {/* Grids */}
-        <line x1={padding} y1={padding} x2={chartWidth - padding} y2={padding} stroke="var(--glass-border)" />
-        <line x1={padding} y1={padding + dataHeight / 2} x2={chartWidth - padding} y2={padding + dataHeight / 2} stroke="var(--glass-border)" />
-        <line x1={padding} y1={padding + dataHeight} x2={chartWidth - padding} y2={padding + dataHeight} stroke="var(--glass-border)" />
+        <line x1={padding} y1={padding} x2={chartWidth - padding} y2={padding} stroke="var(--glass-border)" strokeDasharray="3 3" />
+        <line x1={padding} y1={padding + dataHeight / 2} x2={chartWidth - padding} y2={padding + dataHeight / 2} stroke="var(--glass-border)" strokeDasharray="3 3" />
+        <line x1={padding} y1={padding + dataHeight} x2={chartWidth - padding} y2={padding + dataHeight} stroke="var(--glass-border)" strokeDasharray="3 3" />
+
+        {/* Areas */}
+        <path d={sentAreaPoints} fill="url(#sentAreaGrad)" />
+        <path d={repliedAreaPoints} fill="url(#repliedAreaGrad)" />
 
         {/* X Axis Labels (every 5 days) */}
         {data.map((d, idx) => {
           if (idx % 5 !== 0 && idx !== data.length - 1) return null;
           const x = padding + (idx / (data.length - 1)) * dataWidth;
           return (
-            <text key={idx} x={x} y={chartHeight - 5} fill="hsl(var(--text-muted))" fontSize="9" textAnchor="middle">
+            <text key={idx} x={x} y={chartHeight - 5} fill="hsl(var(--text-muted))" fontSize="9" textAnchor="middle" fontWeight="500">
               {d.date}
             </text>
           );
         })}
 
         {/* Sent Line */}
-        <polyline fill="none" stroke="hsl(var(--accent))" strokeWidth="2.5" points={sentPoints} />
+        <polyline fill="none" stroke="hsl(var(--accent))" strokeWidth="2.5" points={sentPoints} filter="url(#sentGlow)" style={{ strokeLinecap: "round", strokeLinejoin: "round" }} />
         
         {/* Replied Line */}
-        <polyline fill="none" stroke="hsl(var(--accent-cyan))" strokeWidth="2" points={repliedPoints} />
+        <polyline fill="none" stroke="hsl(var(--accent-cyan))" strokeWidth="2" points={repliedPoints} filter="url(#repliedGlow)" style={{ strokeLinecap: "round", strokeLinejoin: "round" }} />
 
-        {/* Circles on Hover */}
+        {/* Circles with pulsing hover style */}
         {data.map((d, idx) => {
           if (d.sent === 0) return null;
           const x = padding + (idx / (data.length - 1)) * dataWidth;
           const ySent = padding + dataHeight - (d.sent / maxSent) * dataHeight;
+          const yReplied = padding + dataHeight - ((d.replied * 5) / maxSent) * dataHeight;
           return (
             <g key={idx} style={{ cursor: "pointer" }}>
-              <circle cx={x} cy={ySent} r="3" fill="hsl(var(--accent))" />
-              <title>{`Date: ${d.date}\nSent: ${d.sent}\nReplies: ${d.replied}`}</title>
+              {/* Outer hover rings */}
+              <circle cx={x} cy={ySent} r="6" fill="hsl(var(--accent))" opacity="0" style={{ transition: "opacity 0.2s" }} onMouseEnter={e => e.currentTarget.setAttribute("opacity", "0.25")} onMouseLeave={e => e.currentTarget.setAttribute("opacity", "0")} />
+              <circle cx={x} cy={ySent} r="3.5" fill="hsl(var(--accent))" stroke="var(--bg-primary)" strokeWidth="1.5" />
+              
+              <circle cx={x} cy={yReplied} r="6" fill="hsl(var(--accent-cyan))" opacity="0" style={{ transition: "opacity 0.2s" }} onMouseEnter={e => e.currentTarget.setAttribute("opacity", "0.25")} onMouseLeave={e => e.currentTarget.setAttribute("opacity", "0")} />
+              <circle cx={x} cy={yReplied} r="3" fill="hsl(var(--accent-cyan))" stroke="var(--bg-primary)" strokeWidth="1.5" />
+              
+              <title>{`Date: ${d.date}\nEmails Sent: ${d.sent}\nReplies: ${d.replied}`}</title>
             </g>
           );
         })}
@@ -171,6 +218,19 @@ export default function AnalyticsPage() {
 
     return (
       <svg width="100%" height="200" viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={{ overflow: "visible" }}>
+        <defs>
+          <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--accent-cyan))" />
+            <stop offset="100%" stopColor="hsl(var(--accent))" />
+          </linearGradient>
+          <filter id="barGlow" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="hsl(var(--accent))" floodOpacity="0.15" />
+          </filter>
+        </defs>
+
+        <line x1={padding} y1={padding} x2={chartWidth - padding} y2={padding} stroke="var(--glass-border)" strokeDasharray="3 3" />
+        <line x1={padding} y1={padding + dataHeight / 2} x2={chartWidth - padding} y2={padding + dataHeight / 2} stroke="var(--glass-border)" strokeDasharray="3 3" />
+
         {data.map((d, idx) => {
           const barWidth = (dataWidth / data.length) * 0.7;
           const x = padding + (idx / data.length) * dataWidth + (dataWidth / data.length) * 0.15;
@@ -178,27 +238,45 @@ export default function AnalyticsPage() {
           const y = padding + dataHeight - barHeight;
 
           return (
-            <g key={idx}>
-              {/* Bar */}
+            <g key={idx} style={{ cursor: "pointer" }}>
               <rect
+                x={x - 2}
+                y={padding}
+                width={barWidth + 4}
+                height={dataHeight}
+                fill="transparent"
+                onMouseEnter={e => {
+                  const bar = e.currentTarget.parentNode?.querySelector(".actual-bar");
+                  if (bar) bar.setAttribute("opacity", "1");
+                }}
+                onMouseLeave={e => {
+                  const bar = e.currentTarget.parentNode?.querySelector(".actual-bar");
+                  if (bar) bar.setAttribute("opacity", "0.85");
+                }}
+              />
+              <rect
+                className="actual-bar"
                 x={x}
                 y={y}
                 width={barWidth}
                 height={barHeight}
-                rx="3"
-                fill="linear-gradient(to top, hsl(var(--accent)), hsl(var(--accent-cyan)))"
-                style={{ fill: "hsl(var(--accent))", opacity: 0.8 }}
+                rx="4"
+                fill="url(#barGrad)"
+                filter="url(#barGlow)"
+                opacity="0.85"
+                style={{ transition: "all 0.25s ease" }}
               />
               {/* Value label */}
               {d.replies > 0 && (
-                <text x={x + barWidth / 2} y={y - 5} fill="#fff" fontSize="9" fontWeight="bold" textAnchor="middle">
+                <text x={x + barWidth / 2} y={y - 5} fill="hsl(var(--text-primary))" fontSize="9" fontWeight="bold" textAnchor="middle">
                   {d.replies}
                 </text>
               )}
               {/* X Axis Label */}
-              <text x={x + barWidth / 2} y={chartHeight - 5} fill="hsl(var(--text-muted))" fontSize="8" textAnchor="middle">
+              <text x={x + barWidth / 2} y={chartHeight - 5} fill="hsl(var(--text-muted))" fontSize="8" textAnchor="middle" fontWeight="500">
                 {d.hour.split(":")[0]}
               </text>
+              <title>{`Hour: ${d.hour}\nReplies: ${d.replies}`}</title>
             </g>
           );
         })}
@@ -384,7 +462,7 @@ export default function AnalyticsPage() {
                     {campaigns
                       .sort((a, b) => b.reply_rate - a.reply_rate) // Sort by best reply rate
                       .map((camp) => (
-                        <tr key={camp.id} style={tableRowStyle}>
+                        <tr key={camp.id} style={tableRowStyle} className="interactive-row">
                           <td 
                             style={{ ...tdStyle, fontWeight: 600, color: "hsl(var(--text-primary))", cursor: "pointer" }}
                             onClick={() => router.push(`/campaigns/${camp.id}`)}

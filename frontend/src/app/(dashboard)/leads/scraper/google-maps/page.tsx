@@ -196,7 +196,7 @@ export default function GoogleMapsScraper() {
 
                 <button 
                   type="submit" 
-                  className="btn btn-primary" 
+                  className="btn btn-primary shine-glow" 
                   style={{ width: "100%", marginTop: "0.5rem" }}
                   disabled={isScraping || !keyword}
                 >
@@ -233,7 +233,7 @@ export default function GoogleMapsScraper() {
                 <span style={percentageTextStyle}>{progress}%</span>
               </div>
               <div style={progressBgStyle}>
-                <div style={{ ...progressFillStyle, width: `${progress}%` }} />
+                <div style={{ ...progressFillStyle, width: `${progress}%` }} className="shimmer-progress" />
               </div>
             </div>
           )}
@@ -255,7 +255,7 @@ export default function GoogleMapsScraper() {
                   </thead>
                   <tbody>
                     {results.map((r, idx) => (
-                      <tr key={idx} style={tableRowStyle}>
+                      <tr key={idx} style={tableRowStyle} className="interactive-row">
                         <td style={{ ...tdStyle, color: "hsl(var(--text-primary))", fontWeight: 500 }}>{r.name}</td>
                         <td style={tdStyle}>
                           <span className="badge badge-primary" style={{ textTransform: "none", fontSize: "0.8rem" }}>

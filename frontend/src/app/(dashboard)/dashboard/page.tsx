@@ -26,6 +26,36 @@ interface AnnouncementItem {
   created_at: string;
 }
 
+function DashboardSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2rem", padding: "2rem", maxWidth: "1400px", margin: "0 auto", width: "100%" }} className="animate-fade-in">
+      {/* Welcome banner skeleton */}
+      <div className="glass-panel skeleton" style={{ height: "130px", borderRadius: "16px" }} />
+      
+      {/* Grid of cards skeleton */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.5rem" }}>
+        <div className="glass-panel skeleton" style={{ height: "125px", borderRadius: "16px" }} />
+        <div className="glass-panel skeleton" style={{ height: "125px", borderRadius: "16px" }} />
+        <div className="glass-panel skeleton" style={{ height: "125px", borderRadius: "16px" }} />
+        <div className="glass-panel skeleton" style={{ height: "125px", borderRadius: "16px" }} />
+      </div>
+
+      {/* Table skeleton */}
+      <div className="glass-panel" style={{ padding: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+          <div className="skeleton" style={{ width: "200px", height: "24px", borderRadius: "4px" }} />
+          <div className="skeleton" style={{ width: "80px", height: "32px", borderRadius: "8px" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div className="skeleton" style={{ height: "40px", borderRadius: "8px" }} />
+          <div className="skeleton" style={{ height: "50px", borderRadius: "8px" }} />
+          <div className="skeleton" style={{ height: "50px", borderRadius: "8px" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -34,6 +64,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
+  const [animatedCreditsWidth, setAnimatedCreditsWidth] = useState(0);
 
   useEffect(() => {
     const checkUser = () => {
@@ -91,6 +122,17 @@ export default function DashboardPage() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (user) {
+      const maxVal = user.plan === "Pro" ? 10000 : user.plan === "Starter" ? 2500 : 50;
+      const targetWidth = Math.min(100, (user.credits / maxVal) * 100);
+      const timer = setTimeout(() => {
+        setAnimatedCreditsWidth(targetWidth);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
+
   const dismissAnnouncement = (id: string) => {
     const next = [...dismissedAnnouncements, id];
     setDismissedAnnouncements(next);
@@ -137,12 +179,7 @@ export default function DashboardPage() {
   const campaignsToDisplay = activeCampaigns.length > 0 ? activeCampaigns : campaigns;
 
   if (loading || !user) {
-    return (
-      <div style={loadingContainerStyle}>
-        <div style={spinnerStyle} />
-        <span style={loadingTextStyle}>Loading your workspace...</span>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
@@ -228,7 +265,7 @@ export default function DashboardPage() {
                 Your outreach campaigns are performing well today. You have {user.credits} scraping credits remaining in your {user.plan} plan.
               </p>
             </div>
-            <button className="btn btn-primary" onClick={() => router.push("/campaigns/new")}>
+            <button className="btn btn-primary shine-glow" onClick={() => router.push("/campaigns/new")}>
               🚀 Launch Campaign
             </button>
           </div>
@@ -252,7 +289,7 @@ export default function DashboardPage() {
             <div className="glass-panel" style={cardStyle}>
               <div style={cardHeaderStyle}>
                 <span style={cardTitleStyle}>Emails Sent</span>
-                <span style={cardIconStyle}>📤</span>
+                <span style={cardIconWrapperStyle("hsl(var(--accent) / 10%)", "hsl(var(--accent))")}>📤</span>
               </div>
               <div style={cardValueStyle}>{totalSent}</div>
               <div style={cardFooterStyle}>
@@ -264,7 +301,7 @@ export default function DashboardPage() {
             <div className="glass-panel" style={cardStyle}>
               <div style={cardHeaderStyle}>
                 <span style={cardTitleStyle}>Avg Open Rate</span>
-                <span style={cardIconStyle}>📬</span>
+                <span style={cardIconWrapperStyle("hsl(var(--accent-secondary) / 10%)", "hsl(var(--accent-secondary))")}>📬</span>
               </div>
               <div style={cardValueStyle}>{totalSent > 0 ? `${avgOpenRate.toFixed(1)}%` : "-"}</div>
               <div style={cardFooterStyle}>
@@ -276,7 +313,7 @@ export default function DashboardPage() {
             <div className="glass-panel" style={cardStyle}>
               <div style={cardHeaderStyle}>
                 <span style={cardTitleStyle}>Avg Reply Rate</span>
-                <span style={cardIconStyle}>💬</span>
+                <span style={cardIconWrapperStyle("hsl(var(--success) / 10%)", "hsl(var(--success))")}>💬</span>
               </div>
               <div style={cardValueStyle}>{totalSent > 0 ? `${avgReplyRate.toFixed(1)}%` : "-"}</div>
               <div style={cardFooterStyle}>
@@ -288,7 +325,7 @@ export default function DashboardPage() {
             <div className="glass-panel" style={cardStyle}>
               <div style={cardHeaderStyle}>
                 <span style={cardTitleStyle}>Bounce Rate</span>
-                <span style={cardIconStyle}>❌</span>
+                <span style={cardIconWrapperStyle("hsl(var(--danger) / 10%)", "hsl(var(--danger))")}>❌</span>
               </div>
               <div style={cardValueStyle}>{totalSent > 0 ? `${avgBounceRate.toFixed(1)}%` : "-"}</div>
               <div style={cardFooterStyle}>
@@ -332,7 +369,7 @@ export default function DashboardPage() {
                 <tbody>
                   {campaignsToDisplay.length > 0 ? (
                     campaignsToDisplay.map((c) => (
-                      <tr key={c.id} style={tableRowStyle}>
+                      <tr key={c.id} style={tableRowStyle} className="interactive-row">
                         <td 
                           style={{ ...tdStyle, fontWeight: 600, color: "hsl(var(--text-primary))", cursor: "pointer" }}
                           onClick={() => router.push(`/campaigns/${c.id}`)}
@@ -437,8 +474,8 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ height: "8px", borderRadius: "999px", backgroundColor: "hsl(var(--bg-tertiary))", overflow: "hidden" }}>
                   <div style={{
-                    height: "100%", borderRadius: "999px", transition: "width 0.8s ease",
-                    width: `${Math.min(100, (user.credits / (user.plan === "Pro" ? 10000 : user.plan === "Starter" ? 2500 : 50)) * 100)}%`,
+                    height: "100%", borderRadius: "999px", transition: "width 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
+                    width: `${animatedCreditsWidth}%`,
                     background: user.credits > 0 ? "linear-gradient(90deg, hsl(142 71% 45%), hsl(160 84% 39%))" : "hsl(0 72% 60%)",
                     boxShadow: "0 0 10px hsl(142 71% 45% / 40%)",
                   }} />
@@ -473,7 +510,7 @@ export default function DashboardPage() {
               <div style={{ display: "flex", gap: "0.75rem", marginTop: "auto" }}>
                 {user.plan !== "Pro" && (
                   <button 
-                    className="btn btn-primary" 
+                    className="btn btn-primary shine-glow" 
                     onClick={() => router.push("/billing")}
                     style={{ flex: 1 }}
                   >
@@ -535,7 +572,7 @@ export default function DashboardPage() {
               </div>
 
               <button 
-                className="btn btn-primary" 
+                className="btn btn-primary shine-glow" 
                 onClick={() => router.push("/billing")}
                 style={{ width: "100%", marginTop: "auto" }}
               >
@@ -716,3 +753,15 @@ const actionButtonStyle: React.CSSProperties = {
   fontSize: "0.8rem",
   transition: "all 0.15s ease",
 };
+
+const cardIconWrapperStyle = (bg: string, color: string): React.CSSProperties => ({
+  width: "36px",
+  height: "36px",
+  borderRadius: "10px",
+  backgroundColor: bg,
+  color: color,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "1.1rem",
+});
