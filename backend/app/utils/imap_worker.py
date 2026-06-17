@@ -82,7 +82,7 @@ def run_imap_operations_sync(provider: str, email_address: str, app_password_or_
         mail.login(email_address, password)
     except Exception as e:
         logger.error(f"IMAP login failed for {email_address} ({provider}): {str(e)}")
-        return spam_moved_count, emails_to_reply
+        raise e
 
     try:
         # 1. SPAM/Junk folder processing
@@ -182,13 +182,21 @@ async def process_incoming_warmups(account: EmailAccount, db: AsyncSession):
     if provider not in ["gmail", "outlook", "webmail"]:
         return
 
-    # Run IMAP network calls in a background thread to prevent blocking the event loop
-    spam_moved, emails_to_reply = await asyncio.to_thread(
-        run_imap_operations_sync,
-        provider,
-        email_address,
-        app_password
-    )
+    try:
+        # Run IMAP network calls in a background thread to prevent blocking the event loop
+        spam_moved, emails_to_reply = await asyncio.to_thread(
+            run_imap_operations_sync,
+            provider,
+            email_address,
+            app_password
+        )
+    except Exception as e:
+        logger.error(f"Error in process_incoming_warmups for {email_address}: {str(e)}")
+        err_str = str(e).lower()
+        if "login" in err_str or "auth" in err_str or "credential" in err_str or "password" in err_str or "invalid" in err_str or "accepted" in err_str:
+            from app.utils.email_sender import handle_mailbox_auth_failure
+            await handle_mailbox_auth_failure(account, db, f"IMAP login failed: {str(e)}")
+        return
 
     if spam_moved == 0 and not emails_to_reply:
         return

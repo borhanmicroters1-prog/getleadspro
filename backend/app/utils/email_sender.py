@@ -11,6 +11,41 @@ from app.models import EmailAccount
 
 logger = logging.getLogger("email_sender")
 
+async def handle_mailbox_auth_failure(email_account: EmailAccount, db: AsyncSession, error_msg: str):
+    """Marks the email account inactive and paused due to login/authentication failures, and notifies user/admins."""
+    logger.warning(f"Mailbox auth failure detected for {email_account.from_email}: {error_msg}. Deactivating and pausing warmup.")
+    email_account.is_active = False
+    email_account.warmup_status = "paused"
+    await db.commit()
+    
+    # Notify owner & administrators
+    from app.models import User
+    from app.utils.telegram import send_telegram_notification
+    
+    try:
+        q_user = await db.execute(select(User).where(User.id == email_account.user_id))
+        user = q_user.scalars().first()
+        if user:
+            is_seed_str = "Seed " if email_account.is_system_seed else ""
+            alert_text = (
+                f"🔒 <b>{is_seed_str}Mailbox Authentication Failed! (Self-Healing)</b>\n\n"
+                f"Mailbox: <b>{email_account.from_email}</b>\n"
+                f"Provider: <b>{email_account.provider.upper()}</b>\n"
+                f"Reason: <i>{error_msg}</i>\n\n"
+                f"Status: Automatically deactivated and removed from active sending & warmup pool."
+            )
+            await send_telegram_notification(user, alert_text)
+            
+            # Also notify all other admin users if this is a system seed mailbox
+            if email_account.is_system_seed:
+                q_admins = await db.execute(select(User).where(User.is_admin == True))
+                admins = q_admins.scalars().all()
+                for admin in admins:
+                    if admin.id != user.id:
+                        await send_telegram_notification(admin, alert_text)
+    except Exception as notify_err:
+        logger.error(f"Failed to notify auth failure for {email_account.from_email}: {notify_err}")
+
 def send_gmail_smtp_sync(
     from_name: str,
     from_email: str,
@@ -190,6 +225,10 @@ async def send_email(
                 if res.status_code in [200, 201, 202]:
                     logger.info(f"Brevo email sent to {to_email}")
                     return True
+                elif res.status_code in [401, 403]:
+                    logger.error(f"Brevo API key authentication failed for {from_email}. Code: {res.status_code}, Response: {res.text}")
+                    await handle_mailbox_auth_failure(email_account, db, f"Brevo API Key unauthorized (Code {res.status_code})")
+                    return False
                 else:
                     logger.error(f"Brevo sending failed. Code: {res.status_code}, Response: {res.text}")
                     return False
@@ -214,8 +253,15 @@ async def send_email(
                 logger.info(f"Gmail SMTP email sent to {to_email}")
                 return True
             return False
+        except smtplib.SMTPAuthenticationError as auth_err:
+            logger.error(f"Gmail SMTP authentication failed for {from_email}: {auth_err}")
+            await handle_mailbox_auth_failure(email_account, db, str(auth_err))
+            return False
         except Exception as e:
             logger.error(f"Gmail SMTP sending error: {str(e)}")
+            err_str = str(e).lower()
+            if "auth" in err_str or "login" in err_str or "credential" in err_str or "accepted" in err_str:
+                await handle_mailbox_auth_failure(email_account, db, str(e))
             return False
 
     elif provider == "outlook":
@@ -235,8 +281,15 @@ async def send_email(
                 logger.info(f"Outlook SMTP email sent to {to_email}")
                 return True
             return False
+        except smtplib.SMTPAuthenticationError as auth_err:
+            logger.error(f"Outlook SMTP authentication failed for {from_email}: {auth_err}")
+            await handle_mailbox_auth_failure(email_account, db, str(auth_err))
+            return False
         except Exception as e:
             logger.error(f"Outlook SMTP sending error: {str(e)}")
+            err_str = str(e).lower()
+            if "auth" in err_str or "login" in err_str or "credential" in err_str or "accepted" in err_str:
+                await handle_mailbox_auth_failure(email_account, db, str(e))
             return False
 
     elif provider == "webmail":
@@ -256,8 +309,15 @@ async def send_email(
                 logger.info(f"Webmail SMTP email sent to {to_email}")
                 return True
             return False
+        except smtplib.SMTPAuthenticationError as auth_err:
+            logger.error(f"Webmail SMTP authentication failed for {from_email}: {auth_err}")
+            await handle_mailbox_auth_failure(email_account, db, str(auth_err))
+            return False
         except Exception as e:
             logger.error(f"Webmail SMTP sending error: {str(e)}")
+            err_str = str(e).lower()
+            if "auth" in err_str or "login" in err_str or "credential" in err_str or "accepted" in err_str:
+                await handle_mailbox_auth_failure(email_account, db, str(e))
             return False
 
     else:

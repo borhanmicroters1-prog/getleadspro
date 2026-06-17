@@ -13,6 +13,7 @@ import asyncio
 from app.utils.email_sender import send_email
 from app.utils.telegram import send_telegram_notification
 from app.utils.imap_worker import process_incoming_warmups, run_real_imap_replies_and_bounces_sync
+from app.utils.config_resolver import get_system_setting
 
 logger = logging.getLogger("scheduler")
 scheduler = AsyncIOScheduler()
@@ -766,6 +767,113 @@ WARMUP_TEMPLATES = [
     {"subject": "Inquiry regarding custom pricing", "body": "Hello,\nDo you offer custom pricing packages for small startups? We have a team of 5 and would love to know more. Thanks."}
 ]
 
+async def generate_ai_warmup_email_content(db) -> dict:
+    """Dynamically generates natural conversational emails using AI if keys are present."""
+    # Resolve system API keys dynamically
+    voidai_api_key = await get_system_setting(db, "VOIDAI_API_KEY")
+    openai_api_key = await get_system_setting(db, "OPENAI_API_KEY")
+    anthropic_api_key = await get_system_setting(db, "ANTHROPIC_API_KEY")
+    gemini_api_key = await get_system_setting(db, "GEMINI_API_KEY")
+
+    voidai_key = None
+    if voidai_api_key:
+        voidai_key = voidai_api_key
+    elif openai_api_key and openai_api_key.startswith("sk-voidai"):
+        voidai_key = openai_api_key
+    elif anthropic_api_key and anthropic_api_key.startswith("sk-voidai"):
+        voidai_key = anthropic_api_key
+
+    # Choose provider & model
+    provider = "claude"
+    if not voidai_key:
+        if anthropic_api_key:
+            provider = "claude"
+        elif openai_api_key:
+            provider = "chatgpt"
+        elif gemini_api_key:
+            provider = "gemini"
+        else:
+            # No keys, return None to trigger fallback templates
+            return None
+    
+    prompt = (
+        "You are an employee sending a casual, professional email to a business contact or colleague. "
+        "Generate a realistic, natural-sounding, conversational email subject and body. "
+        "The topic should be a typical office or business scenario. Examples:\n"
+        "- Asking about product features or pricing\n"
+        "- Requesting website support or reporting a query\n"
+        "- Asking for holiday hours or office location\n"
+        "- Suggesting a joint marketing idea or partnership\n"
+        "- Requesting a feedback session or quick call\n\n"
+        "Ensure it sounds organic and completely written by a human. Avoid any sales pitches, spammy promotional language, or placeholders (like [Your Name] or [Company Name]). Write complete, realistic text.\n\n"
+        "You MUST return a JSON object with exactly two keys:\n"
+        "1. 'subject': The subject line of the email.\n"
+        "2. 'body': The email body text.\n\n"
+        "Do NOT output any markdown tags (like ```json), notes, explanations, or backticks. Return ONLY the raw valid JSON payload."
+    )
+
+    import httpx
+    from app.routers.emails import clean_llm_json
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            if voidai_key:
+                headers = {
+                    "Authorization": f"Bearer {voidai_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "claude-sonnet-4-6",
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=15.0)
+                if res.status_code == 200:
+                    result_text = res.json()["choices"][0]["message"]["content"]
+                    return clean_llm_json(result_text)
+            else:
+                if provider == "claude":
+                    headers = {
+                        "x-api-key": anthropic_api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json"
+                    }
+                    payload = {
+                        "model": "claude-3-5-sonnet-20241022",
+                        "max_tokens": 400,
+                        "messages": [{"role": "user", "content": prompt}]
+                    }
+                    res = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=15.0)
+                    if res.status_code == 200:
+                        result_text = res.json()["content"][0]["text"]
+                        return clean_llm_json(result_text)
+                elif provider == "chatgpt":
+                    headers = {
+                        "Authorization": f"Bearer {openai_api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}]
+                    }
+                    res = await client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=15.0)
+                    if res.status_code == 200:
+                        result_text = res.json()["choices"][0]["message"]["content"]
+                        return clean_llm_json(result_text)
+                elif provider == "gemini":
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}"
+                    headers = {"Content-Type": "application/json"}
+                    payload = {
+                        "contents": [{"parts": [{"text": prompt}]}]
+                    }
+                    res = await client.post(url, headers=headers, json=payload, timeout=15.0)
+                    if res.status_code == 200:
+                        result_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        return clean_llm_json(result_text)
+        except Exception as e:
+            logger.error(f"Failed to generate dynamic AI warmup content: {e}")
+            
+    return None
+
 async def warmup_cron_job():
     """
     Daily cron job that runs through all connected email accounts that have warmup enabled.
@@ -864,10 +972,15 @@ async def warmup_cron_job():
                     # Fallback to mock pool in sandbox/local dev
                     recipient_email = "mock-warmup-pool@getleads.com"
                     
-                # Pick a random template
-                tmpl = random.choice(WARMUP_TEMPLATES)
-                subj = tmpl["subject"]
-                body = tmpl["body"]
+                # Generate dynamic AI warmup email or fallback to templates
+                ai_content = await generate_ai_warmup_email_content(db)
+                if ai_content and "subject" in ai_content and "body" in ai_content:
+                    subj = ai_content["subject"]
+                    body = ai_content["body"]
+                else:
+                    tmpl = random.choice(WARMUP_TEMPLATES)
+                    subj = tmpl["subject"]
+                    body = tmpl["body"]
                 
                 # Deliver warmup email with custom warmup header
                 success = await send_email(
