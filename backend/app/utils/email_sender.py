@@ -4,6 +4,7 @@ import logging
 import smtplib
 import httpx
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import Optional
@@ -54,10 +55,15 @@ def send_gmail_smtp_sync(
     body: str,
     app_password: str,
     headers: dict = None,
-    is_html: bool = False
+    is_html: bool = False,
+    html_body: str = None
 ) -> bool:
     """Synchronous function to send email using Gmail SMTP and App Password."""
-    if is_html:
+    if is_html and html_body:
+        mime = MIMEMultipart("alternative")
+        mime.attach(MIMEText(body, "plain"))
+        mime.attach(MIMEText(html_body, "html"))
+    elif is_html:
         mime = MIMEText(body, "html")
     else:
         mime = MIMEText(body)
@@ -84,10 +90,15 @@ def send_outlook_smtp_sync(
     body: str,
     app_password: str,
     headers: dict = None,
-    is_html: bool = False
+    is_html: bool = False,
+    html_body: str = None
 ) -> bool:
     """Synchronous function to send email using Outlook SMTP and App Password."""
-    if is_html:
+    if is_html and html_body:
+        mime = MIMEMultipart("alternative")
+        mime.attach(MIMEText(body, "plain"))
+        mime.attach(MIMEText(html_body, "html"))
+    elif is_html:
         mime = MIMEText(body, "html")
     else:
         mime = MIMEText(body)
@@ -114,7 +125,8 @@ def send_webmail_smtp_sync(
     body: str,
     config_json: str,
     headers: dict = None,
-    is_html: bool = False
+    is_html: bool = False,
+    html_body: str = None
 ) -> bool:
     """Synchronous function to send email using custom Webmail SMTP configurations."""
     import json
@@ -123,7 +135,11 @@ def send_webmail_smtp_sync(
     smtp_port = int(config["smtp_port"])
     password = config["password"]
 
-    if is_html:
+    if is_html and html_body:
+        mime = MIMEMultipart("alternative")
+        mime.attach(MIMEText(body, "plain"))
+        mime.attach(MIMEText(html_body, "html"))
+    elif is_html:
         mime = MIMEText(body, "html")
     else:
         mime = MIMEText(body)
@@ -198,6 +214,13 @@ async def send_email(
     else:
         unsub_url = f"{settings.FRONTEND_URL}/unsubscribe"
 
+    # Clone and initialize headers to prevent mutating the argument
+    headers = headers.copy() if headers else {}
+    if campaign_lead_id:
+        # Inject standard RFC 2369 / Gmail / Yahoo compliant unsubscribe headers
+        headers["List-Unsubscribe"] = f"<{unsub_url}>"
+        headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+
     html_body = html_body.replace("{{unsubscribe_link}}", unsub_url)
     body = body.replace("{{unsubscribe_link}}", unsub_url)
 
@@ -243,6 +266,7 @@ async def send_email(
         }
         if is_html:
             payload["htmlContent"] = html_body
+            payload["textContent"] = body
         else:
             payload["textContent"] = body
 
@@ -274,10 +298,11 @@ async def send_email(
                 from_email,
                 to_email,
                 subject,
-                html_body if is_html else body,
+                body,
                 token,
                 headers,
-                is_html
+                is_html,
+                html_body if is_html else None
             )
             if success:
                 logger.info(f"Gmail SMTP email sent to {to_email}")
@@ -302,10 +327,11 @@ async def send_email(
                 from_email,
                 to_email,
                 subject,
-                html_body if is_html else body,
+                body,
                 token,
                 headers,
-                is_html
+                is_html,
+                html_body if is_html else None
             )
             if success:
                 logger.info(f"Outlook SMTP email sent to {to_email}")
@@ -330,10 +356,11 @@ async def send_email(
                 from_email,
                 to_email,
                 subject,
-                html_body if is_html else body,
+                body,
                 token,
                 headers,
-                is_html
+                is_html,
+                html_body if is_html else None
             )
             if success:
                 logger.info(f"Webmail SMTP email sent to {to_email}")
