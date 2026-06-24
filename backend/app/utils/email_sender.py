@@ -165,7 +165,8 @@ async def send_email(
     body: str,
     db: AsyncSession,
     headers: dict = None,
-    campaign_lead_id: Optional[str] = None
+    campaign_lead_id: Optional[str] = None,
+    send_as_plaintext: bool = False
 ) -> bool:
     """
     Sends an email using Gmail, Brevo, Outlook or custom Webmail credentials.
@@ -224,7 +225,7 @@ async def send_email(
     html_body = html_body.replace("{{unsubscribe_link}}", unsub_url)
     body = body.replace("{{unsubscribe_link}}", unsub_url)
 
-    if campaign_lead_id:
+    if campaign_lead_id and not send_as_plaintext:
         tracking_url = f"{base_url}/api/automation/track/open/{campaign_lead_id}"
         # Convert text body to HTML if not already HTML
         is_body_html = "<html" in body.lower() or "<body" in body.lower() or "<p" in body.lower() or "<br" in body.lower()

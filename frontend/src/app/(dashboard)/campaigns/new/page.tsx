@@ -52,6 +52,7 @@ export default function NewCampaignPage() {
   // Step 2: Message Template
   const [subjectA, setSubjectA] = useState("");
   const [bodyTemplate, setBodyTemplate] = useState("");
+  const [sendAsPlaintext, setSendAsPlaintext] = useState(false);
   
   // AI Personalizer overlay state
   const [aiModel, setAiModel] = useState("claude-3.5-sonnet");
@@ -247,6 +248,7 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
       subject_a: subjectA,
       subject_b: enableABTest ? subjectB : null,
       body_template: bodyTemplate,
+      send_as_plaintext: sendAsPlaintext,
       follow_up_1_days: enableFollowUp1 ? followUp1Days : null,
       follow_up_1_body: enableFollowUp1 ? followUp1Body : null,
       follow_up_2_days: enableFollowUp2 ? followUp2Days : null,
@@ -541,6 +543,19 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
                       style={{ height: "220px", resize: "none" }}
                       required
                     />
+                  </div>
+
+                  <div style={{ ...checkboxWrapperStyle, marginBottom: "0.5rem" }}>
+                    <input 
+                      type="checkbox" 
+                      id="sendAsPlaintext" 
+                      checked={sendAsPlaintext} 
+                      onChange={(e) => setSendAsPlaintext(e.target.checked)} 
+                      style={checkboxStyle}
+                    />
+                    <label htmlFor="sendAsPlaintext" style={checkboxLabelStyle}>
+                      🍃 Send as Organic Plain Text (Disables HTML & tracking pixels to maximize deliverability)
+                    </label>
                   </div>
 
                   <div style={templateActionsRowStyle}>

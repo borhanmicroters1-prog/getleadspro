@@ -25,6 +25,16 @@ class BrevoConnectRequest(BaseModel):
   from_name: str
   daily_limit: Optional[int] = 300
 
+class WebmailConnectRequest(BaseModel):
+  from_name: str
+  from_email: str
+  smtp_host: str
+  smtp_port: int
+  imap_host: str
+  imap_port: Optional[int] = 993
+  password: str
+  daily_limit: Optional[int] = 50
+
 @router.get("")
 async def list_email_accounts(
   current_user: dict = Depends(get_current_user),
@@ -191,6 +201,69 @@ async def connect_brevo(
   await db.refresh(account)
   return account.to_dict()
 
+@router.post("/webmail/connect")
+async def connect_webmail(
+  request: WebmailConnectRequest,
+  current_user: dict = Depends(get_current_user),
+  db: AsyncSession = Depends(get_db)
+):
+  # Clean fields
+  from_email = request.from_email.strip().lower()
+  if "@" not in from_email:
+    raise HTTPException(
+      status_code=status.HTTP_400_BAD_REQUEST,
+      detail="Invalid sender email address."
+    )
+    
+  if not request.password.strip():
+    raise HTTPException(
+      status_code=status.HTTP_400_BAD_REQUEST,
+      detail="Password cannot be empty."
+    )
+
+  import json
+  config = {
+    "smtp_host": request.smtp_host.strip(),
+    "smtp_port": request.smtp_port,
+    "imap_host": request.imap_host.strip(),
+    "imap_port": request.imap_port or 993,
+    "password": request.password.strip()
+  }
+  config_json = json.dumps(config)
+
+  # Check if Webmail account already connected for this email
+  q = await db.execute(
+    select(EmailAccount).where(
+      and_(
+        EmailAccount.user_id == current_user["id"],
+        EmailAccount.from_email == from_email
+      )
+    )
+  )
+  account = q.scalars().first()
+  
+  if account:
+    account.provider = "webmail"
+    account.from_name = request.from_name
+    account.access_token = config_json
+    account.daily_limit = request.daily_limit or 50
+    account.is_active = True
+  else:
+    account = EmailAccount(
+      user_id=current_user["id"],
+      provider="webmail",
+      access_token=config_json,
+      from_email=from_email,
+      from_name=request.from_name,
+      daily_limit=request.daily_limit or 50,
+      is_active=True
+    )
+    db.add(account)
+    
+  await db.commit()
+  await db.refresh(account)
+  return account.to_dict()
+
 @router.delete("/{account_id}")
 async def disconnect_email_account(
   account_id: str,
@@ -213,3 +286,31 @@ async def disconnect_email_account(
     )
     
   return {"message": "Email account disconnected successfully."}
+
+@router.get("/{account_id}/verify-dns")
+async def verify_account_dns(
+  account_id: str,
+  current_user: dict = Depends(get_current_user),
+  db: AsyncSession = Depends(get_db)
+):
+  q = await db.execute(
+    select(EmailAccount).where(
+      and_(
+        EmailAccount.id == account_id,
+        EmailAccount.user_id == current_user["id"]
+      )
+    )
+  )
+  account = q.scalars().first()
+  if not account:
+    raise HTTPException(
+      status_code=status.HTTP_404_NOT_FOUND,
+      detail="Email account not found or unauthorized."
+    )
+    
+  from app.utils.dns_validator import verify_domain_dns
+  
+  # Run live DNS validation check on account's domain
+  results = verify_domain_dns(account.from_email, account.provider)
+  return results
+

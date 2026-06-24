@@ -34,6 +34,7 @@ interface CampaignMetadata {
   rotate_mailbox_ids: string | null;
   ai_model: string;
   ai_prompt_template: string | null;
+  send_as_plaintext: boolean;
   created_at: string;
   started_at: string | null;
 }
@@ -433,6 +434,19 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                       <span style={configLabelStyle}>Personalization Model</span>
                       <span style={configValueStyle}>
                         🤖 {campaign.ai_model ? (campaign.ai_model.toUpperCase()) : "CLAUDE 3.5 SONNET"}
+                      </span>
+                    </div>
+
+                    <div style={configItemStyle}>
+                      <span style={configLabelStyle}>Email Format</span>
+                      <span style={configValueStyle}>
+                        {campaign.send_as_plaintext ? (
+                          <span style={{ color: "rgb(52, 211, 153)", fontWeight: 600 }}>
+                            🍃 Organic Plain Text (No tracking)
+                          </span>
+                        ) : (
+                          <span>HTML (With open tracking pixel)</span>
+                        )}
                       </span>
                     </div>
 

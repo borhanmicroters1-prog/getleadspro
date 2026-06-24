@@ -218,7 +218,15 @@ async def send_emails_job():
                 body_subbed = substitute_variables(campaign.body_template, lead)
 
                 # 7. Deliver email
-                success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db, campaign_lead_id=c_lead.id)
+                success = await send_email(
+                    mailbox, 
+                    lead.email, 
+                    subject_subbed, 
+                    body_subbed, 
+                    db, 
+                    campaign_lead_id=c_lead.id,
+                    send_as_plaintext=getattr(campaign, 'send_as_plaintext', False)
+                )
                 
                 if success:
                     c_lead.status = "sent"
@@ -241,7 +249,7 @@ async def check_follow_ups_job():
     """Checks for leads waiting for follow-up emails and sends them automatically."""
     logger.info("Running check_follow_ups_job...")
     async with async_session_maker() as db:
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         
         # 1. Fetch leads whose follow-up is due
         q_leads = await db.execute(
@@ -365,7 +373,15 @@ async def check_follow_ups_job():
             body_subbed = substitute_variables(follow_up_body, lead)
 
             # Send follow-up
-            success = await send_email(mailbox, lead.email, subject_subbed, body_subbed, db, campaign_lead_id=c_lead.id)
+            success = await send_email(
+                mailbox, 
+                lead.email, 
+                subject_subbed, 
+                body_subbed, 
+                db, 
+                campaign_lead_id=c_lead.id,
+                send_as_plaintext=getattr(campaign, 'send_as_plaintext', False)
+            )
             
             if success:
                 c_lead.sent_count = step_number
@@ -741,7 +757,7 @@ async def detect_ab_test_winners_job():
     """
     logger.info("Running detect_ab_test_winners_job...")
     async with async_session_maker() as db:
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         threshold_time = now - datetime.timedelta(hours=48)
         
         q = await db.execute(

@@ -32,11 +32,35 @@ class SpamCheckRequest(BaseModel):
   body: str
 
 SPAM_KEYWORDS = [
-  "free", "click now", "click here", "guaranteed", "100% satisfied", 
-  "earn money", "make money", "credit card", "cash", "urgent", 
-  "act now", "limited time", "promotion", "order now", "no risk", 
-  "risk free", "investment", "multi-level marketing", "double your income", 
-  "incredible deal", "lowest price", "special promotion", "apply now"
+  # Urgency & Pressure
+  "act now", "apply now", "call now", "limited time", "urgent", "instant", "now only", 
+  "get it now", "quick start", "do it today", "once in a lifetime", "expire", "hurry", 
+  "immediate", "fast cash", "urgently", "act immediately", "right now",
+  
+  # Financial & Money
+  "free", "cost", "price", "save", "save money", "earn", "earn money", "make money", 
+  "extra income", "income", "cash", "cash bonus", "double your", "triple your", "investment", 
+  "pure profit", "million", "billion", "dollars", "credit card", "no cost", "no fees", 
+  "loans", "debt", "eliminate debt", "refinance", "lower interest", "unsecured debt", 
+  "financial freedom", "earn cash", "get paid", "guaranteed income", "money back", 
+  "obligation", "cheap", "lowest price", "discount", "half price", "outstanding balance",
+  "be your own boss", "work from home", "make $", "earn $", "hidden charges", "zero risk",
+  "no investment", "low price", "affordable price", "money making", "residual income",
+  
+  # Gimmicks & Direct Offers
+  "guarantee", "guaranteed", "satisfaction guaranteed", "100% satisfied", "risk free", 
+  "100% free", "trial", "free trial", "click here", "subscribe", "opt in", "join free", 
+  "winner", "won", "prizes", "giveaway", "gift certificate", "free gift", "claims", 
+  "amazing", "incredible", "miracle", "no strings attached", "opportunity", "promise you", 
+  "will not believe", "vacation", "as seen on", "marketing", "sales", "promotion", 
+  "click below", "visit our website", "order now", "shipping included", "exclusive deal",
+  "special offer", "unsolicited", "valuable partner", "one time", "unlimited", "increase traffic",
+  "double your traffic", "search engine optimization", "seo package",
+  
+  # Adult, Medical & Pharma
+  "viagra", "valium", "xanax", "cialis", "pills", "pharmacy", "weight loss", "lose weight", 
+  "medicine", "herbal", "stop snoring", "clinical", "diagnostic", "remedy", "anti-aging",
+  "lose weight fast"
 ]
 
 def clean_llm_json(text: str) -> Dict[str, str]:
@@ -358,18 +382,22 @@ async def check_email_spam(request: SpamCheckRequest):
   warnings = []
   score = 0.0
 
-  # 1. Keywords Scan
+  # 1. Keywords Scan using regex word boundaries (excluding nested matches like "sales" in "resales")
   for kw in SPAM_KEYWORDS:
-    if kw in subject_lower:
+    escaped = re.escape(kw)
+    # Using alphanumeric lookarounds to enforce word/phrase boundaries safely
+    pattern = rf"(?<![a-zA-Z0-9]){escaped}(?![a-zA-Z0-9])"
+    
+    if re.search(pattern, subject_lower):
       flagged_words.append(kw)
       score += 1.8
-      warnings.append(f"Spam keyword '{kw.upper()}' detected in subject line.")
-    if kw in body_lower:
+      warnings.append(f"Spam trigger word/phrase '{kw.upper()}' detected in subject line.")
+    if re.search(pattern, body_lower):
       flagged_words.append(kw)
       score += 0.8
       # Avoid duplicate keyword warnings
-      if f"Spam keyword '{kw.upper()}' detected in body." not in warnings:
-        warnings.append(f"Spam keyword '{kw.upper()}' detected in body.")
+      if f"Spam trigger word/phrase '{kw.upper()}' detected in body." not in warnings:
+        warnings.append(f"Spam trigger word/phrase '{kw.upper()}' detected in body.")
 
   # Remove duplicate flagged words in list
   flagged_words = list(set(flagged_words))

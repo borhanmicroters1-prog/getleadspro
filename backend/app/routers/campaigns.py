@@ -34,6 +34,7 @@ class CampaignCreate(BaseModel):
   timezone: str = "UTC"
   send_interval: int = 2
   status: str = "draft"
+  send_as_plaintext: bool = False
 
 class CampaignUpdate(BaseModel):
   name: Optional[str] = None
@@ -55,6 +56,7 @@ class CampaignUpdate(BaseModel):
   send_end_hour: Optional[int] = None
   timezone: Optional[str] = None
   send_interval: Optional[int] = None
+  send_as_plaintext: Optional[bool] = None
 
 @router.get("")
 async def list_campaigns(
@@ -121,6 +123,7 @@ async def create_campaign(
     subject_a=request.subject_a,
     subject_b=request.subject_b,
     body_template=request.body_template,
+    send_as_plaintext=request.send_as_plaintext,
     follow_up_1_days=request.follow_up_1_days,
     follow_up_1_body=request.follow_up_1_body,
     follow_up_2_days=request.follow_up_2_days,

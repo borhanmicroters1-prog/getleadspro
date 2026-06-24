@@ -6,7 +6,7 @@ import { auth, UserProfile } from "@/utils/auth";
 import { api } from "@/utils/api";
 interface EmailAccountItem {
   id: string;
-  provider: "gmail" | "brevo";
+  provider: "gmail" | "brevo" | "webmail";
   from_email: string;
   from_name: string;
   daily_limit: number;
@@ -26,7 +26,39 @@ export default function EmailAccountsPage() {
   const [isBrevoConnecting, setIsBrevoConnecting] = useState(false);
   const [error, setError] = useState("");
 
-  // Gmail form state
+  // DNS Modal State
+  const [selectedDnsAccount, setSelectedDnsAccount] = useState<{ id: string; email: string } | null>(null);
+  const [dnsResults, setDnsResults] = useState<any>(null);
+  const [loadingDns, setLoadingDns] = useState(false);
+  const [isDnsModalOpen, setIsDnsModalOpen] = useState(false);
+
+  const handleCheckDNS = async (accountId: string, email: string) => {
+    setSelectedDnsAccount({ id: accountId, email });
+    setDnsResults(null);
+    setLoadingDns(true);
+    setIsDnsModalOpen(true);
+    try {
+      const data = await api.get(`/api/email-accounts/${accountId}/verify-dns`);
+      setDnsResults(data);
+    } catch (err: any) {
+      console.error("Error verifying DNS:", err);
+      alert("Failed to fetch DNS records: " + err.message);
+      setIsDnsModalOpen(false);
+    } finally {
+      setLoadingDns(false);
+    }
+  };
+
+  // Webmail form state
+  const [webmailName, setWebmailName] = useState("");
+  const [webmailEmail, setWebmailEmail] = useState("");
+  const [webmailSmtpHost, setWebmailSmtpHost] = useState("");
+  const [webmailSmtpPort, setWebmailSmtpPort] = useState(587);
+  const [webmailImapHost, setWebmailImapHost] = useState("");
+  const [webmailImapPort, setWebmailImapPort] = useState(993);
+  const [webmailPassword, setWebmailPassword] = useState("");
+  const [webmailLimit, setWebmailLimit] = useState(50);
+  const [isWebmailConnecting, setIsWebmailConnecting] = useState(false);
   const [gmailName, setGmailName] = useState("");
   const [gmailEmail, setGmailEmail] = useState("");
   const [gmailAppPassword, setGmailAppPassword] = useState("");
@@ -122,6 +154,43 @@ export default function EmailAccountsPage() {
       setError(err.message || "Failed to connect Brevo account.");
     } finally {
       setIsBrevoConnecting(false);
+    }
+  };
+
+  const handleConnectWebmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!webmailName || !webmailEmail || !webmailSmtpHost || !webmailPassword || !webmailImapHost) {
+      setError("Please fill in all required Webmail fields.");
+      return;
+    }
+
+    setIsWebmailConnecting(true);
+    setError("");
+    try {
+      await api.post("/api/email-accounts/webmail/connect", {
+        from_name: webmailName,
+        from_email: webmailEmail,
+        smtp_host: webmailSmtpHost,
+        smtp_port: Number(webmailSmtpPort),
+        imap_host: webmailImapHost,
+        imap_port: Number(webmailImapPort),
+        password: webmailPassword,
+        daily_limit: Number(webmailLimit)
+      });
+      // Clear Webmail form fields
+      setWebmailName("");
+      setWebmailEmail("");
+      setWebmailSmtpHost("");
+      setWebmailSmtpPort(587);
+      setWebmailImapHost("");
+      setWebmailImapPort(993);
+      setWebmailPassword("");
+      setWebmailLimit(50);
+      fetchAccounts();
+    } catch (err: any) {
+      setError(err.message || "Failed to connect Webmail account.");
+    } finally {
+      setIsWebmailConnecting(false);
     }
   };
 
@@ -315,6 +384,130 @@ export default function EmailAccountsPage() {
                 </button>
               </form>
             </div>
+
+            {/* Custom SMTP/IMAP Webmail Connection Card */}
+            <div className="glass-panel" style={connectionCardStyle}>
+              <div style={cardHeaderStyle}>
+                <div style={webmailLogoStyle}>W</div>
+                <h3 style={cardTitleStyle}>Connect Custom SMTP/IMAP</h3>
+              </div>
+              <form onSubmit={handleConnectWebmail} style={brevoFormStyle}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>Sender Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. John" 
+                      value={webmailName}
+                      onChange={(e) => setWebmailName(e.target.value)}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>Sender Email</label>
+                    <input 
+                      type="email" 
+                      placeholder="john@yourdomain.com" 
+                      value={webmailEmail}
+                      onChange={(e) => setWebmailEmail(e.target.value)}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>SMTP Host</label>
+                    <input 
+                      type="text" 
+                      placeholder="smtp.yourdomain.com" 
+                      value={webmailSmtpHost}
+                      onChange={(e) => setWebmailSmtpHost(e.target.value)}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>SMTP Port</label>
+                    <input 
+                      type="number" 
+                      value={webmailSmtpPort}
+                      onChange={(e) => setWebmailSmtpPort(Number(e.target.value))}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>IMAP Host</label>
+                    <input 
+                      type="text" 
+                      placeholder="imap.yourdomain.com" 
+                      value={webmailImapHost}
+                      onChange={(e) => setWebmailImapHost(e.target.value)}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>IMAP Port</label>
+                    <input 
+                      type="number" 
+                      value={webmailImapPort}
+                      onChange={(e) => setWebmailImapPort(Number(e.target.value))}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>Password</label>
+                    <input 
+                      type="password" 
+                      placeholder="Email Password" 
+                      value={webmailPassword}
+                      onChange={(e) => setWebmailPassword(e.target.value)}
+                      className="input-field"
+                      required
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                  <div style={inputGroupStyle}>
+                    <label style={labelStyle}>Daily Limit</label>
+                    <input 
+                      type="number" 
+                      min="10" 
+                      max="10000" 
+                      value={webmailLimit}
+                      onChange={(e) => setWebmailLimit(Number(e.target.value))}
+                      className="input-field"
+                      disabled={isWebmailConnecting}
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={isWebmailConnecting}
+                  style={{ marginTop: "0.25rem", background: "linear-gradient(135deg, rgb(6, 182, 212), rgb(14, 116, 144))", color: "#fff", border: "none" }}
+                >
+                  {isWebmailConnecting ? "Connecting SMTP..." : "Connect Custom SMTP/IMAP"}
+                </button>
+              </form>
+            </div>
           </div>
 
           {/* Connected Mailboxes List */}
@@ -360,6 +553,13 @@ export default function EmailAccountsPage() {
                       ) : null}
                       <span className="badge badge-success" style={{ fontSize: "10px" }}>Active</span>
                       <button 
+                        onClick={() => handleCheckDNS(acc.id, acc.from_email)} 
+                        className="btn btn-secondary"
+                        style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.25rem", height: "30px", background: "rgba(6, 182, 212, 0.1)", color: "rgb(34, 211, 238)", border: "1px solid rgba(6, 182, 212, 0.2)" }}
+                      >
+                        🔒 Verify DNS
+                      </button>
+                      <button 
                         onClick={() => router.push(`/email-accounts/${acc.id}/warm-up`)} 
                         className="btn btn-secondary"
                         style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.25rem", height: "30px" }}
@@ -383,6 +583,145 @@ export default function EmailAccountsPage() {
               </div>
             )}
           </div>
+
+          {/* DNS Settings Verification Modal */}
+          {isDnsModalOpen && selectedDnsAccount && (
+            <div style={modalOverlayStyle}>
+              <div className="glass-panel" style={modalContentStyle}>
+                <div style={modalHeaderStyle}>
+                  <h3 style={{ fontSize: "1.2rem", color: "#ffffff", margin: 0, fontWeight: 700 }}>
+                    🔒 DNS Deliverability Setup: <span style={{ color: "rgb(34, 211, 238)", fontWeight: 600 }}>{selectedDnsAccount.email}</span>
+                  </h3>
+                  <button 
+                    onClick={() => setIsDnsModalOpen(false)} 
+                    style={closeButtonStyle}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {loadingDns ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", gap: "1rem" }}>
+                    <div style={spinnerStyle} />
+                    <span style={{ color: "rgba(255, 255, 255, 0.7)", fontSize: "0.95rem" }}>Querying DNS records...</span>
+                  </div>
+                ) : dnsResults ? (
+                  <div style={modalBodyStyle}>
+                    
+                    {/* Overall Score */}
+                    <div style={dnsScoreContainerStyle}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.85rem", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}>Deliverability DNS Health Score</span>
+                        <span style={{ fontSize: "1.3rem", fontWeight: 800, color: dnsResults.overall_score === 100 ? "rgb(52, 211, 153)" : dnsResults.overall_score >= 60 ? "rgb(245, 158, 11)" : "rgb(239, 68, 68)" }}>
+                          {dnsResults.overall_score}%
+                        </span>
+                      </div>
+                      <div style={dnsScoreProgressBgStyle}>
+                        <div style={{
+                          ...dnsScoreProgressFillStyle,
+                          width: `${dnsResults.overall_score}%`,
+                          backgroundColor: dnsResults.overall_score === 100 ? "rgb(52, 211, 153)" : dnsResults.overall_score >= 60 ? "rgb(245, 158, 11)" : "rgb(239, 68, 68)"
+                        }} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1rem" }}>
+                      {/* SPF Section */}
+                      <div style={dnsRecordRowStyle}>
+                        <div style={dnsRecordHeaderStyle}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <strong style={{ fontSize: "0.95rem", color: "#ffffff" }}>SPF Record</strong>
+                            {dnsResults.spf.status === "pass" ? (
+                              <span style={dnsPassBadgeStyle}>✓ Active</span>
+                            ) : (
+                              <span style={dnsFailBadgeStyle}>✗ Missing</span>
+                            )}
+                          </div>
+                        </div>
+                        <p style={dnsRecordInfoStyle}>{dnsResults.spf.info}</p>
+                        {dnsResults.spf.record ? (
+                          <div style={dnsRecordValueStyle}>
+                            <code>{dnsResults.spf.record}</code>
+                          </div>
+                        ) : (
+                          <div style={dnsRecordValueMissingStyle}>No SPF TXT record detected in DNS.</div>
+                        )}
+                      </div>
+
+                      {/* DKIM Section */}
+                      <div style={dnsRecordRowStyle}>
+                        <div style={dnsRecordHeaderStyle}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <strong style={{ fontSize: "0.95rem", color: "#ffffff" }}>DKIM Record</strong>
+                            {dnsResults.dkim.status === "pass" ? (
+                              <span style={dnsPassBadgeStyle}>✓ Active ({dnsResults.dkim.selector})</span>
+                            ) : (
+                              <span style={dnsFailBadgeStyle}>✗ Missing</span>
+                            )}
+                          </div>
+                        </div>
+                        <p style={dnsRecordInfoStyle}>{dnsResults.dkim.info}</p>
+                        {dnsResults.dkim.record ? (
+                          <div style={dnsRecordValueStyle}>
+                            <code>{dnsResults.dkim.record}</code>
+                          </div>
+                        ) : (
+                          <div style={dnsRecordValueMissingStyle}>No DKIM TXT record detected under common selectors.</div>
+                        )}
+                      </div>
+
+                      {/* DMARC Section */}
+                      <div style={dnsRecordRowStyle}>
+                        <div style={dnsRecordHeaderStyle}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <strong style={{ fontSize: "0.95rem", color: "#ffffff" }}>DMARC Record</strong>
+                            {dnsResults.dmarc.status === "pass" ? (
+                              <span style={dnsPassBadgeStyle}>✓ Active</span>
+                            ) : (
+                              <span style={dnsFailBadgeStyle}>✗ Missing</span>
+                            )}
+                          </div>
+                        </div>
+                        <p style={dnsRecordInfoStyle}>{dnsResults.dmarc.info}</p>
+                        {dnsResults.dmarc.record ? (
+                          <div style={dnsRecordValueStyle}>
+                            <code>{dnsResults.dmarc.record}</code>
+                          </div>
+                        ) : (
+                          <div style={dnsRecordValueMissingStyle}>No DMARC TXT record detected at _dmarc.{dnsResults.domain}.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Recommendations Setup Guide */}
+                    {dnsResults.recommendations.length > 0 ? (
+                      <div style={dnsRecommendationsBoxStyle}>
+                        <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem", color: "rgb(245, 158, 11)", fontWeight: 700 }}>
+                          ⚠️ Required DNS Setup Steps ({dnsResults.recommendations.length})
+                        </h4>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingLeft: "0.5rem" }}>
+                          {dnsResults.recommendations.map((rec: string, idx: number) => (
+                            <div key={idx} style={{ fontSize: "11px", color: "#ffffff", lineHeight: "1.4" }}>
+                              <strong>{idx + 1}.</strong> {rec}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={dnsSuccessBoxStyle}>
+                        🎉 <strong>Perfect Setup!</strong> All deliverability records (SPF, DKIM, and DMARC) are fully active and validated. Your emails have maximum placement score.
+                      </div>
+                    )}
+
+                  </div>
+                ) : (
+                  <div style={{ padding: "2rem", textAlign: "center", color: "rgba(255, 255, 255, 0.5)" }}>
+                    No results found.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
         </main>
   );
@@ -490,6 +829,20 @@ const brevoLogoStyle: React.CSSProperties = {
   borderRadius: "8px",
 };
 
+const webmailLogoStyle: React.CSSProperties = {
+  width: "36px",
+  height: "36px",
+  backgroundColor: "rgba(16, 185, 129, 0.12)",
+  border: "1px solid rgba(16, 185, 129, 0.3)",
+  color: "rgb(52, 211, 153)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: "bold",
+  fontSize: "1.25rem",
+  borderRadius: "8px",
+};
+
 const cardTitleStyle: React.CSSProperties = {
   fontSize: "1.15rem",
   color: "hsl(var(--text-primary))",
@@ -551,8 +904,9 @@ const accountMainDetailsStyle: React.CSSProperties = {
   minWidth: "220px",
 };
 
-const providerBadgeStyle = (provider: "gmail" | "brevo"): React.CSSProperties => {
+const providerBadgeStyle = (provider: "gmail" | "brevo" | "webmail"): React.CSSProperties => {
   const isGmail = provider === "gmail";
+  const isBrevo = provider === "brevo";
   return {
     fontSize: "9px",
     fontWeight: 700,
@@ -561,9 +915,21 @@ const providerBadgeStyle = (provider: "gmail" | "brevo"): React.CSSProperties =>
     borderWidth: "1px",
     borderStyle: "solid",
     letterSpacing: "0.05em",
-    backgroundColor: isGmail ? "rgba(234, 67, 53, 0.1)" : "rgba(0, 146, 255, 0.1)",
-    borderColor: isGmail ? "rgba(234, 67, 53, 0.3)" : "rgba(0, 146, 255, 0.3)",
-    color: isGmail ? "rgb(234, 67, 53)" : "rgb(0, 146, 255)"
+    backgroundColor: isGmail 
+      ? "rgba(234, 67, 53, 0.1)" 
+      : isBrevo 
+        ? "rgba(0, 146, 255, 0.1)" 
+        : "rgba(16, 185, 129, 0.1)",
+    borderColor: isGmail 
+      ? "rgba(234, 67, 53, 0.3)" 
+      : isBrevo 
+        ? "rgba(0, 146, 255, 0.3)" 
+        : "rgba(16, 185, 129, 0.3)",
+    color: isGmail 
+      ? "rgb(234, 67, 53)" 
+      : isBrevo 
+        ? "rgb(0, 146, 255)" 
+        : "rgb(52, 211, 153)"
   };
 };
 
@@ -625,5 +991,163 @@ const emptyStateStyle: React.CSSProperties = {
   padding: "3rem 2rem",
   color: "hsl(var(--text-muted))",
   fontSize: "0.95rem",
+  lineHeight: "1.5",
+};
+
+const modalOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(0, 0, 0, 0.75)",
+  backdropFilter: "blur(8px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+};
+
+const modalContentStyle: React.CSSProperties = {
+  width: "100%",
+  maxWidth: "600px",
+  maxHeight: "85vh",
+  overflowY: "auto",
+  padding: "2rem",
+  display: "flex",
+  flexDirection: "column",
+  gap: "1.5rem",
+  backgroundColor: "rgba(20, 20, 25, 0.85)",
+  border: "1px solid var(--glass-border)",
+  borderRadius: "16px",
+  boxShadow: "0 20px 40px rgba(0, 0, 0, 0.5)",
+};
+
+const modalHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  borderBottom: "1px solid var(--glass-border)",
+  paddingBottom: "1rem",
+};
+
+const modalBodyStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "1rem",
+};
+
+const closeButtonStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "rgba(255, 255, 255, 0.6)",
+  fontSize: "1.25rem",
+  cursor: "pointer",
+  padding: "0.25rem",
+};
+
+const dnsScoreContainerStyle: React.CSSProperties = {
+  padding: "1.25rem",
+  background: "rgba(255, 255, 255, 0.03)",
+  border: "1px solid var(--glass-border)",
+  borderRadius: "12px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.5rem",
+};
+
+const dnsScoreProgressBgStyle: React.CSSProperties = {
+  width: "100%",
+  height: "6px",
+  backgroundColor: "rgba(255, 255, 255, 0.08)",
+  borderRadius: "3px",
+  overflow: "hidden",
+};
+
+const dnsScoreProgressFillStyle: React.CSSProperties = {
+  height: "100%",
+  borderRadius: "3px",
+  transition: "width 0.4s ease",
+};
+
+const dnsRecordRowStyle: React.CSSProperties = {
+  padding: "1.25rem",
+  background: "rgba(255, 255, 255, 0.02)",
+  border: "1px solid var(--glass-border)",
+  borderRadius: "12px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.4rem",
+};
+
+const dnsRecordHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const dnsPassBadgeStyle: React.CSSProperties = {
+  fontSize: "10px",
+  fontWeight: "bold",
+  color: "rgb(52, 211, 153)",
+  backgroundColor: "rgba(16, 185, 129, 0.12)",
+  padding: "0.25rem 0.5rem",
+  borderRadius: "4px",
+  border: "1px solid rgba(16, 185, 129, 0.2)",
+};
+
+const dnsFailBadgeStyle: React.CSSProperties = {
+  fontSize: "10px",
+  fontWeight: "bold",
+  color: "rgb(239, 68, 68)",
+  backgroundColor: "rgba(239, 68, 68, 0.12)",
+  padding: "0.25rem 0.5rem",
+  borderRadius: "4px",
+  border: "1px solid rgba(239, 68, 68, 0.2)",
+};
+
+const dnsRecordInfoStyle: React.CSSProperties = {
+  fontSize: "11px",
+  color: "rgba(255, 255, 255, 0.7)",
+  margin: 0,
+  lineHeight: "1.4",
+};
+
+const dnsRecordValueStyle: React.CSSProperties = {
+  padding: "0.5rem 0.75rem",
+  background: "rgba(0, 0, 0, 0.2)",
+  borderRadius: "6px",
+  fontSize: "11px",
+  wordBreak: "break-all",
+  border: "1px solid rgba(255, 255, 255, 0.05)",
+  color: "rgb(34, 211, 238)",
+};
+
+const dnsRecordValueMissingStyle: React.CSSProperties = {
+  padding: "0.5rem 0.75rem",
+  background: "rgba(0, 0, 0, 0.15)",
+  borderRadius: "6px",
+  fontSize: "11px",
+  color: "rgba(239, 68, 68, 0.9)",
+  fontStyle: "italic",
+};
+
+const dnsRecommendationsBoxStyle: React.CSSProperties = {
+  padding: "1.25rem",
+  backgroundColor: "rgba(245, 158, 11, 0.08)",
+  border: "1px solid rgba(245, 158, 11, 0.25)",
+  borderRadius: "12px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.5rem",
+};
+
+const dnsSuccessBoxStyle: React.CSSProperties = {
+  padding: "1.25rem",
+  backgroundColor: "rgba(16, 185, 129, 0.08)",
+  border: "1px solid rgba(16, 185, 129, 0.2)",
+  borderRadius: "12px",
+  fontSize: "13px",
+  color: "rgb(52, 211, 153)",
   lineHeight: "1.5",
 };

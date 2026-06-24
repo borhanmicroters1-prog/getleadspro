@@ -118,6 +118,9 @@ class Lead(Base):
     status = Column(String(50), default="new")  # new, contacted, replied, bounced, unsubscribed, ooo
     score = Column(Float, default=0.0)
     title = Column(String(255), nullable=True)
+    verification_status = Column(String(50), default="unverified")  # unverified, valid, invalid, catch_all, disposable, unknown
+    verification_error = Column(String(500), nullable=True)
+    verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Unique constraint per user to prevent duplicate email records per campaign
@@ -142,6 +145,9 @@ class Lead(Base):
             "status": self.status,
             "score": self.score,
             "title": self.title,
+            "verification_status": self.verification_status,
+            "verification_error": self.verification_error,
+            "verified_at": self.verified_at.isoformat() if self.verified_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -263,6 +269,7 @@ class Campaign(Base):
     subject_b = Column(String(255), nullable=True)
     ab_winner = Column(String(50), nullable=True)
     body_template = Column(String(5000), nullable=True)
+    send_as_plaintext = Column(Boolean, default=False, nullable=False)
     
     # Follow-ups
     follow_up_1_days = Column(Integer, nullable=True)
@@ -300,6 +307,7 @@ class Campaign(Base):
             "subject_b": self.subject_b,
             "ab_winner": self.ab_winner,
             "body_template": self.body_template,
+            "send_as_plaintext": self.send_as_plaintext,
             "follow_up_1_days": self.follow_up_1_days,
             "follow_up_1_body": self.follow_up_1_body,
             "follow_up_2_days": self.follow_up_2_days,

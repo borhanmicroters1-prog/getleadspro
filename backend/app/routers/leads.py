@@ -248,6 +248,60 @@ async def run_facebook_ads_scrape_task(
             "message": f"Scrape task failed: {str(e)}"
         }
 
+async def run_bulk_verification_task(
+    task_id: str,
+    user_id: str,
+    lead_ids: List[str],
+    db_sessionmaker
+):
+    active_tasks[task_id] = {
+        "status": "running",
+        "progress": 0,
+        "results_count": 0,
+        "message": f"Initializing verification of {len(lead_ids)} emails..."
+    }
+    
+    from app.utils.email_verifier import verify_email_dns_and_smtp
+    
+    total = len(lead_ids)
+    verified = 0
+    
+    try:
+        for i, lead_id in enumerate(lead_ids):
+            progress_pct = int(((i) / total) * 100)
+            active_tasks[task_id]["progress"] = progress_pct
+            active_tasks[task_id]["message"] = f"Verifying {i+1} of {total} emails..."
+            
+            async with db_sessionmaker() as db:
+                res = await db.execute(
+                    select(Lead).where(
+                        and_(Lead.id == lead_id, Lead.user_id == user_id)
+                    )
+                )
+                lead = res.scalars().first()
+                if lead:
+                    status, error = await verify_email_dns_and_smtp(lead.email)
+                    lead.verification_status = status
+                    lead.verification_error = error
+                    lead.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    await db.commit()
+                    verified += 1
+                    active_tasks[task_id]["results_count"] = verified
+                    
+        active_tasks[task_id] = {
+            "status": "completed",
+            "progress": 100,
+            "results_count": verified,
+            "message": f"Successfully verified {verified} leads."
+        }
+    except Exception as e:
+        print(f"Verification task failed: {e}")
+        active_tasks[task_id] = {
+            "status": "failed",
+            "progress": 100,
+            "message": f"Verification failed: {str(e)}"
+        }
+
 # ==========================================
 # API Routes
 # ==========================================
@@ -335,10 +389,12 @@ async def get_scrape_task_status(task_id: str):
 
 @router.post("/upload")
 async def upload_csv_leads(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     campaign_id: Optional[str] = None,
     campaign_name: Optional[str] = None,
     project_name: Optional[str] = None,
+    auto_verify: bool = False,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -412,6 +468,7 @@ async def upload_csv_leads(
     parsed = 0
     skipped = 0
     inserted = 0
+    inserted_ids = []
     
     for row in reader:
         email = row[email_key].strip()
@@ -493,6 +550,7 @@ async def upload_csv_leads(
         )
         db.add(db_lead)
         await db.flush() # Flush to populate db_lead.id
+        inserted_ids.append(db_lead.id)
         
         # Link to campaign if campaign is provided
         if campaign:
@@ -516,11 +574,29 @@ async def upload_csv_leads(
         
     await db.commit()
     
+    task_id = None
+    if auto_verify and inserted_ids:
+        task_id = str(uuid.uuid4())
+        active_tasks[task_id] = {
+            "status": "pending",
+            "progress": 0,
+            "message": "Queuing auto-verification task..."
+        }
+        from app.database import async_session_maker
+        background_tasks.add_task(
+            run_bulk_verification_task,
+            task_id,
+            current_user["id"],
+            inserted_ids,
+            async_session_maker
+        )
+        
     return {
         "filename": file.filename,
         "parsed_rows": parsed,
         "inserted_leads": inserted,
-        "skipped_rows": skipped
+        "skipped_rows": skipped,
+        "verification_task_id": task_id
     }
 
 @router.get("/projects")
@@ -543,6 +619,7 @@ async def list_leads(
     source: Optional[str] = None,
     status_filter: Optional[str] = None,
     campaign: Optional[str] = None,
+    verification_status: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -551,6 +628,11 @@ async def list_leads(
     # Construct base query filtering by current user
     query = select(Lead).where(Lead.user_id == current_user["id"])
     count_query = select(func.count(Lead.id)).where(Lead.user_id == current_user["id"])
+    
+    # Apply filter by verification status
+    if verification_status:
+        query = query.where(Lead.verification_status == verification_status)
+        count_query = count_query.where(Lead.verification_status == verification_status)
     
     # Apply search filters
     if search:
@@ -608,6 +690,81 @@ async def bulk_delete_leads(
     result = await db.execute(stmt)
     await db.commit()
     return {"message": f"Successfully deleted {result.rowcount} leads."}
+
+class VerifyRequest(BaseModel):
+    lead_ids: Optional[List[str]] = None
+    project_name: Optional[str] = None
+
+@router.post("/verify")
+async def trigger_bulk_verification(
+    request: VerifyRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    lead_ids = []
+    if request.lead_ids:
+        lead_ids = request.lead_ids
+    elif request.project_name:
+        res = await db.execute(
+            select(Lead.id).where(
+                and_(Lead.campaign_name == request.project_name, Lead.user_id == current_user["id"])
+            )
+        )
+        lead_ids = [str(r) for r in res.scalars().all()]
+        
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No leads found to verify.")
+        
+    task_id = str(uuid.uuid4())
+    active_tasks[task_id] = {
+        "status": "pending",
+        "progress": 0,
+        "results_count": 0,
+        "message": "Queuing verification task..."
+    }
+    
+    from app.database import async_session_maker
+    background_tasks.add_task(
+        run_bulk_verification_task,
+        task_id,
+        current_user["id"],
+        lead_ids,
+        async_session_maker
+    )
+    
+    return {"task_id": task_id, "status": "pending"}
+
+@router.get("/verify/status/{task_id}")
+async def get_verification_task_status(task_id: str):
+    if task_id not in active_tasks:
+        raise HTTPException(status_code=404, detail="Verification task not found.")
+    return active_tasks[task_id]
+
+@router.post("/{lead_id}/verify")
+async def verify_single_lead(
+    lead_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(
+        select(Lead).where(
+            and_(Lead.id == lead_id, Lead.user_id == current_user["id"])
+        )
+    )
+    lead = res.scalars().first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found.")
+        
+    from app.utils.email_verifier import verify_email_dns_and_smtp
+    
+    status_val, error_val = await verify_email_dns_and_smtp(lead.email)
+    lead.verification_status = status_val
+    lead.verification_error = error_val
+    lead.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    
+    await db.commit()
+    return lead.to_dict()
 
 @router.delete("/clear-all")
 async def clear_all_leads(

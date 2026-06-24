@@ -26,6 +26,7 @@ function CsvUploadContent() {
   const [projects, setProjects] = useState<string[]>([]);
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
   const [projectName, setProjectName] = useState("");
+  const [autoVerify, setAutoVerify] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -122,6 +123,7 @@ function CsvUploadContent() {
       if (projectName.trim()) {
         queryParams.append("project_name", projectName.trim());
       }
+      queryParams.append("auto_verify", autoVerify.toString());
       const queryString = queryParams.toString();
       const url = queryString ? `/api/leads/upload?${queryString}` : `/api/leads/upload`;
 
@@ -264,6 +266,21 @@ function CsvUploadContent() {
                   <small style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "2px" }}>
                     Uploaded leads will be tagged with this group name. You can filter by this group when setting up outreach campaigns.
                   </small>
+                </div>
+
+                {/* Auto Verify Toggle */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem", marginBottom: "0.75rem" }}>
+                  <input 
+                    id="auto-verify-checkbox"
+                    type="checkbox"
+                    checked={autoVerify}
+                    onChange={(e) => setAutoVerify(e.target.checked)}
+                    style={{ cursor: "pointer", width: "18px", height: "18px" }}
+                    disabled={isUploading}
+                  />
+                  <label htmlFor="auto-verify-checkbox" style={{ fontSize: "0.875rem", color: "hsl(var(--text-secondary))", cursor: "pointer", fontWeight: 500 }}>
+                    Verify email list automatically after upload
+                  </label>
                 </div>
 
                 <button 

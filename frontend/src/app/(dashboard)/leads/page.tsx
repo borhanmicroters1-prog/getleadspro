@@ -15,6 +15,8 @@ interface LeadItem {
   campaign_name?: string;
   status: string;
   title?: string;
+  verification_status?: string;
+  verification_error?: string;
   created_at: string;
 }
 
@@ -32,17 +34,23 @@ export default function LeadsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [verificationFilter, setVerificationFilter] = useState("");
   const [projects, setProjects] = useState<string[]>([]);
   const [campaignFilter, setCampaignFilter] = useState("");
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  
+  // Async Verification Progress Polling
+  const [verificationTaskId, setVerificationTaskId] = useState<string | null>(null);
+  const [verificationProgress, setVerificationProgress] = useState<{ progress: number; message: string } | null>(null);
 
   // Clear selection on page/filter change
   useEffect(() => {
     setSelectedIds([]);
-  }, [page, searchQuery, sourceFilter, statusFilter, campaignFilter]);
+  }, [page, searchQuery, sourceFilter, statusFilter, campaignFilter, verificationFilter]);
 
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
@@ -68,6 +76,7 @@ export default function LeadsPage() {
         source: sourceFilter,
         status_filter: statusFilter,
         campaign: campaignFilter || undefined,
+        verification_status: verificationFilter || undefined,
       });
       setLeads(data.leads || []);
       setTotal(data.total || 0);
@@ -76,11 +85,57 @@ export default function LeadsPage() {
     }
   };
 
+  const handleBulkVerify = async () => {
+    if (selectedIds.length === 0) return;
+    setIsVerifying(true);
+    try {
+      const res = await api.post("/api/leads/verify", { lead_ids: selectedIds });
+      if (res.task_id) {
+        setVerificationTaskId(res.task_id);
+        setSelectedIds([]);
+      }
+    } catch (err: any) {
+      alert("Failed to start verification: " + err.message);
+      setIsVerifying(false);
+    }
+  };
+
+  // Poll Verification Task Status
+  useEffect(() => {
+    if (!verificationTaskId) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const statusData = await api.get(`/api/leads/verify/status/${verificationTaskId}`);
+        setVerificationProgress({
+          progress: statusData.progress,
+          message: statusData.message
+        });
+        
+        if (statusData.status === "completed" || statusData.status === "failed") {
+          clearInterval(interval);
+          setVerificationTaskId(null);
+          setIsVerifying(false);
+          setVerificationProgress(null);
+          fetchLeads();
+        }
+      } catch (err) {
+        console.error("Error polling verification status:", err);
+        clearInterval(interval);
+        setVerificationTaskId(null);
+        setIsVerifying(false);
+        setVerificationProgress(null);
+      }
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [verificationTaskId]);
+
   useEffect(() => {
     if (user) {
       fetchLeads();
     }
-  }, [user, page, searchQuery, sourceFilter, statusFilter, campaignFilter]);
+  }, [user, page, searchQuery, sourceFilter, statusFilter, campaignFilter, verificationFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,6 +230,24 @@ export default function LeadsPage() {
     }
   };
 
+  const getVerificationBadgeStyle = (status: string) => {
+    const baseStyle = { fontSize: "11px", textTransform: "capitalize" as const, cursor: "help" as const };
+    switch (status) {
+      case "valid":
+        return { ...baseStyle, backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" };
+      case "invalid":
+        return { ...baseStyle, backgroundColor: "rgba(239, 68, 68, 0.15)", color: "#ef4444", border: "1px solid rgba(239, 68, 68, 0.3)" };
+      case "disposable":
+        return { ...baseStyle, backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)" };
+      case "catch_all":
+        return { ...baseStyle, backgroundColor: "rgba(99, 102, 241, 0.15)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)" };
+      case "unknown":
+        return { ...baseStyle, backgroundColor: "rgba(107, 114, 128, 0.15)", color: "#6b7280", border: "1px solid rgba(107, 114, 128, 0.3)" };
+      default: // unverified
+        return { ...baseStyle, backgroundColor: "rgba(209, 213, 219, 0.15)", color: "#9ca3af", border: "1px solid rgba(209, 213, 219, 0.3)" };
+    }
+  };
+
   const totalPages = Math.ceil(total / limit) || 1;
 
   if (loading || !user) {
@@ -197,36 +270,52 @@ export default function LeadsPage() {
               <p style={sectionSubStyle}>Manage, filter, export or upload leads in your database</p>
             </div>
             <div style={headerButtonsGroupStyle}>
-              {selectedIds.length > 0 ? (
-                <button 
-                  onClick={handleBulkDelete} 
-                  className="btn" 
-                  style={{ 
-                    backgroundColor: "hsl(var(--danger) / 15%)", 
-                    borderColor: "hsl(var(--danger) / 30%)", 
-                    color: "hsl(var(--danger))",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.4rem"
-                  }}
-                  disabled={isBulkDeleting}
-                >
-                  {isBulkDeleting ? "Deleting..." : `🗑️ Delete Selected (${selectedIds.length})`}
-                </button>
-              ) : (
-                total > 0 && (
+              {selectedIds.length > 0 && (
+                <>
                   <button 
-                    onClick={handleClearAll} 
-                    className="btn btn-secondary" 
+                    onClick={handleBulkVerify} 
+                    className="btn" 
                     style={{ 
-                      color: "hsl(var(--danger))", 
-                      borderColor: "hsl(var(--danger) / 20%)" 
+                      backgroundColor: "hsl(var(--accent) / 15%)", 
+                      borderColor: "hsl(var(--accent) / 30%)", 
+                      color: "hsl(var(--accent))",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem"
+                    }}
+                    disabled={isVerifying}
+                  >
+                    {isVerifying ? "Verifying..." : `✓ Verify Selected (${selectedIds.length})`}
+                  </button>
+                  <button 
+                    onClick={handleBulkDelete} 
+                    className="btn" 
+                    style={{ 
+                      backgroundColor: "hsl(var(--danger) / 15%)", 
+                      borderColor: "hsl(var(--danger) / 30%)", 
+                      color: "hsl(var(--danger))",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem"
                     }}
                     disabled={isBulkDeleting}
                   >
-                    🗑️ Clear All
+                    {isBulkDeleting ? "Deleting..." : `🗑️ Delete Selected (${selectedIds.length})`}
                   </button>
-                )
+                </>
+              )}
+              {selectedIds.length === 0 && total > 0 && (
+                <button 
+                  onClick={handleClearAll} 
+                  className="btn btn-secondary" 
+                  style={{ 
+                    color: "hsl(var(--danger))", 
+                    borderColor: "hsl(var(--danger) / 20%)" 
+                  }}
+                  disabled={isBulkDeleting}
+                >
+                  🗑️ Clear All
+                </button>
               )}
               <button onClick={handleExportCSV} className="btn btn-secondary" disabled={leads.length === 0}>
                 📥 Export CSV
@@ -294,8 +383,40 @@ export default function LeadsPage() {
                 <option value="unsubscribed">Unsubscribed</option>
                 <option value="ooo">Out of Office</option>
               </select>
+
+              <select 
+                value={verificationFilter} 
+                onChange={(e) => { setPage(1); setVerificationFilter(e.target.value); }}
+                className="input-field"
+                style={selectStyle}
+              >
+                <option value="">All Verification</option>
+                <option value="unverified">Unverified</option>
+                <option value="valid">Valid</option>
+                <option value="invalid">Invalid</option>
+                <option value="catch_all">Catch All</option>
+                <option value="disposable">Disposable</option>
+                <option value="unknown">Unknown</option>
+              </select>
             </div>
           </div>
+
+          {/* Progress Banner for Active Verification */}
+          {verificationProgress && (
+            <div style={progressBannerStyle} className="glass-panel">
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 500, color: "hsl(var(--text-primary))" }}>
+                  ⚙️ {verificationProgress.message}
+                </span>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "hsl(var(--accent))" }}>
+                  {verificationProgress.progress}%
+                </span>
+              </div>
+              <div style={{ width: "100%", height: "8px", backgroundColor: "hsl(var(--bg-tertiary))", borderRadius: "4px", overflow: "hidden" }}>
+                <div style={{ width: `${verificationProgress.progress}%`, height: "100%", backgroundColor: "hsl(var(--accent))", transition: "width 0.3s ease" }} />
+              </div>
+            </div>
+          )}
 
           {/* Leads Table Panel */}
           <div className="glass-panel" style={tablePanelStyle}>
@@ -323,6 +444,7 @@ export default function LeadsPage() {
                     <th style={thStyle}>Phone</th>
                     <th style={thStyle}>Website</th>
                     <th style={thStyle}>Source</th>
+                    <th style={thStyle}>Verification</th>
                     <th style={thStyle}>Status</th>
                     <th style={{ ...thStyle, textAlign: "right" }}>Actions</th>
                   </tr>
@@ -387,6 +509,11 @@ export default function LeadsPage() {
                           </div>
                         </td>
                         <td style={tdStyle}>
+                          <span className="badge" style={getVerificationBadgeStyle(l.verification_status || "unverified")} title={l.verification_error || "No errors"}>
+                            {l.verification_status || "unverified"}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
                           <span className="badge" style={getStatusBadgeStyle(l.status)}>
                             {l.status}
                           </span>
@@ -405,7 +532,7 @@ export default function LeadsPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={9} style={noDataTdStyle}>
+                      <td colSpan={10} style={noDataTdStyle}>
                         No leads found. Scrape some leads or upload a CSV to get started!
                       </td>
                     </tr>
@@ -589,4 +716,14 @@ const paginationBtnStyle: React.CSSProperties = {
 const paginationInfoStyle: React.CSSProperties = {
   fontSize: "0.85rem",
   color: "hsl(var(--text-secondary))",
+};
+
+const progressBannerStyle: React.CSSProperties = {
+  padding: "1.25rem 2rem",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.5rem",
+  marginBottom: "1.5rem",
+  border: "1px solid hsl(var(--accent) / 20%)",
+  backgroundColor: "hsl(var(--accent) / 2%)",
 };
