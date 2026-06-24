@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, DateTime, Date, ForeignKey, UniqueConstraint, Boolean
+from sqlalchemy import Column, String, Integer, Float, DateTime, Date, ForeignKey, UniqueConstraint, Boolean, JSON
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.types import TypeDecorator, CHAR
 from datetime import datetime, timezone
@@ -122,6 +122,7 @@ class Lead(Base):
     verification_error = Column(String(500), nullable=True)
     verified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+    custom_fields = Column(JSON, nullable=True)
 
     # Unique constraint per user to prevent duplicate email records per campaign
     __table_args__ = (UniqueConstraint("user_id", "campaign_name", "email", name="uq_user_campaign_lead_email"),)
@@ -149,6 +150,7 @@ class Lead(Base):
             "verification_error": self.verification_error,
             "verified_at": self.verified_at.isoformat() if self.verified_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "custom_fields": self.custom_fields,
         }
 
 
@@ -283,7 +285,7 @@ class Campaign(Base):
     send_start_hour = Column(Integer, default=9)
     send_end_hour = Column(Integer, default=18)
     timezone = Column(String(100), default="UTC")
-    send_interval = Column(Integer, default=2, nullable=False)
+    send_interval = Column(Integer, default=120, nullable=False)
     
     created_at = Column(DateTime, default=utc_now, nullable=False)
     started_at = Column(DateTime, nullable=True)

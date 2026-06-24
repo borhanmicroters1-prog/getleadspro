@@ -32,7 +32,7 @@ class CampaignCreate(BaseModel):
   send_start_hour: int = 9
   send_end_hour: int = 18
   timezone: str = "UTC"
-  send_interval: int = 2
+  send_interval: int = 120
   status: str = "draft"
   send_as_plaintext: bool = False
 

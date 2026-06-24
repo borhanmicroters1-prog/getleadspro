@@ -11,6 +11,29 @@ interface UploadStats {
   skipped_rows: number;
 }
 
+interface CsvPreview {
+  allHeaders: string[];
+  standardHeaders: string[];
+  customHeaders: string[];
+  totalRows: number;
+}
+
+const STANDARD_HEADER_PATTERNS = [
+  "email", "email address", "email_address", "mail",
+  "first name", "first_name", "firstname", "first",
+  "last name", "last_name", "lastname", "last",
+  "name", "full name", "full_name", "fullname",
+  "website", "web", "url", "site", "website link", "website_link",
+  "company", "company name", "company_name", "organization", "org",
+  "phone", "phone number", "phone_number", "mobile", "tel", "contact",
+  "title", "role", "job title", "job_title", "designation", "position",
+];
+
+function isStandardHeader(header: string): boolean {
+  const h = header.trim().toLowerCase();
+  return STANDARD_HEADER_PATTERNS.some(p => p === h || h.includes(p) || p.includes(h));
+}
+
 function CsvUploadContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,6 +50,7 @@ function CsvUploadContent() {
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
   const [projectName, setProjectName] = useState("");
   const [autoVerify, setAutoVerify] = useState(false);
+  const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -59,6 +83,47 @@ function CsvUploadContent() {
     }
   }, [campaignQueryId, campaigns]);
 
+  const parseCsvPreview = (selectedFile: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+
+      // Parse just enough to get headers and row count
+      const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.trim());
+      if (lines.length === 0) return;
+
+      // Parse header row (handle quoted headers too)
+      const headerLine = lines[0];
+      const headers: string[] = [];
+      let inQuote = false;
+      let current = "";
+      for (let i = 0; i < headerLine.length; i++) {
+        const ch = headerLine[i];
+        if (ch === '"') {
+          inQuote = !inQuote;
+        } else if (ch === ',' && !inQuote) {
+          headers.push(current.trim().replace(/^"|"$/g, ""));
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+      if (current) headers.push(current.trim().replace(/^"|"$/g, ""));
+
+      const standardHeaders = headers.filter(h => isStandardHeader(h));
+      const customHeaders = headers.filter(h => !isStandardHeader(h));
+
+      setCsvPreview({
+        allHeaders: headers,
+        standardHeaders,
+        customHeaders,
+        totalRows: Math.max(0, lines.length - 1),
+      });
+    };
+    reader.readAsText(selectedFile);
+  };
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -80,6 +145,8 @@ function CsvUploadContent() {
         setFile(droppedFile);
         setError("");
         setStats(null);
+        setCsvPreview(null);
+        parseCsvPreview(droppedFile);
       } else {
         setError("Only CSV files are supported.");
       }
@@ -93,6 +160,8 @@ function CsvUploadContent() {
         setFile(selectedFile);
         setError("");
         setStats(null);
+        setCsvPreview(null);
+        parseCsvPreview(selectedFile);
       } else {
         setError("Only CSV files are supported.");
       }
@@ -217,7 +286,56 @@ function CsvUploadContent() {
                   </div>
                 )}
 
+                {/* CSV Column Preview */}
+                {csvPreview && (
+                  <div className="animate-fade-in" style={csvPreviewBoxStyle}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "hsl(var(--text-primary))" }}>
+                        📊 Detected Columns ({csvPreview.allHeaders.length} total, ~{csvPreview.totalRows} rows)
+                      </span>
+                    </div>
+                    
+                    {csvPreview.standardHeaders.length > 0 && (
+                      <div style={{ marginBottom: "0.6rem" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-muted))", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Standard Fields
+                        </span>
+                        <div style={chipRowStyle}>
+                          {csvPreview.standardHeaders.map(h => (
+                            <span key={h} style={standardChipStyle}>{h}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {csvPreview.customHeaders.length > 0 && (
+                      <div>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-muted))", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Custom Variables (usable in email templates)
+                        </span>
+                        <div style={chipRowStyle}>
+                          {csvPreview.customHeaders.map(h => (
+                            <span key={h} style={customChipStyle} title={`Use as {{${h}}} in email templates`}>
+                              {`{{${h}}}`}
+                            </span>
+                          ))}
+                        </div>
+                        <p style={{ fontSize: "11px", color: "hsl(var(--text-muted))", marginTop: "0.4rem", lineHeight: "1.5" }}>
+                          These custom variables will be saved with each lead. Use them in campaign email templates (e.g. <code style={{ fontSize: "11px", padding: "0 3px", background: "hsl(var(--bg-tertiary))", borderRadius: "3px" }}>{`{{${csvPreview.customHeaders[0]}}}`}</code>) to personalize your outreach.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {csvPreview.customHeaders.length === 0 && (
+                      <p style={{ fontSize: "12px", color: "hsl(var(--text-muted))", marginTop: "0.25rem" }}>
+                        No custom columns detected. Add extra columns beyond the standard fields to unlock custom variables for email templates.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Group / Campaign Name Input */}
+
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   <label htmlFor="project-name-input" style={{ fontSize: "0.85rem", color: "hsl(var(--text-secondary))", fontWeight: 500 }}>
                     Group / Campaign Name <span style={{ color: "hsl(var(--danger))" }}>*</span>
@@ -608,4 +726,41 @@ const inlineFormStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "0.5rem",
+};
+
+const csvPreviewBoxStyle: React.CSSProperties = {
+  backgroundColor: "hsl(var(--bg-secondary) / 50%)",
+  border: "1px solid hsl(var(--border-color))",
+  borderRadius: "12px",
+  padding: "1rem 1.25rem",
+};
+
+const chipRowStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.4rem",
+  marginTop: "0.4rem",
+};
+
+const standardChipStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "0.2rem 0.6rem",
+  backgroundColor: "hsl(var(--bg-tertiary))",
+  border: "1px solid hsl(var(--border-color))",
+  borderRadius: "6px",
+  fontSize: "12px",
+  color: "hsl(var(--text-secondary))",
+  fontFamily: "monospace",
+};
+
+const customChipStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "0.2rem 0.6rem",
+  backgroundColor: "hsl(var(--accent) / 12%)",
+  border: "1px solid hsl(var(--accent) / 30%)",
+  borderRadius: "6px",
+  fontSize: "12px",
+  color: "hsl(var(--accent))",
+  fontFamily: "monospace",
+  cursor: "default",
 };

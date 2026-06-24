@@ -78,7 +78,9 @@ async def init_db():
         ("users", "custom_tracking_domain", "ALTER TABLE users ADD COLUMN custom_tracking_domain VARCHAR(255)"),
         ("leads", "verification_status", "ALTER TABLE leads ADD COLUMN verification_status VARCHAR(50) DEFAULT 'unverified'"),
         ("leads", "verification_error", "ALTER TABLE leads ADD COLUMN verification_error VARCHAR(500)"),
-        ("leads", "verified_at", "ALTER TABLE leads ADD COLUMN verified_at TIMESTAMP")
+        ("leads", "verified_at", "ALTER TABLE leads ADD COLUMN verified_at TIMESTAMP"),
+        ("campaigns", "send_as_plaintext", "ALTER TABLE campaigns ADD COLUMN send_as_plaintext BOOLEAN DEFAULT false"),
+        ("leads", "custom_fields", "ALTER TABLE leads ADD COLUMN custom_fields JSON")
     ]
 
     for table, column, sql in migrations:

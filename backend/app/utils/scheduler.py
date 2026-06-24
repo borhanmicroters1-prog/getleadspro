@@ -22,16 +22,41 @@ def substitute_variables(text: str, lead: Lead) -> str:
     """Substitutes variables like {{name}} or {{company}} in email templates."""
     if not text:
         return ""
-    text = text.replace("{{name}}", lead.name or "Prospect")
-    text = text.replace("{{company}}", lead.company or "your business")
-    text = text.replace("{{website}}", lead.website or "your website")
+        
+    import re
     
-    # Additional placeholders
+    # Predefined placeholders
     first_name = lead.name.split()[0] if (lead.name and lead.name.strip()) else "Prospect"
-    text = text.replace("{{first_name}}", first_name)
-    text = text.replace("{{title}}", lead.title or "")
     
-    return text
+    replacements = {
+        "name": lead.name or "Prospect",
+        "company": lead.company or "your business",
+        "website": lead.website or "your website",
+        "first_name": first_name,
+        "title": lead.title or ""
+    }
+    
+    # Custom fields placeholders
+    if lead.custom_fields and isinstance(lead.custom_fields, dict):
+        for key, val in lead.custom_fields.items():
+            val_str = str(val) if val is not None else ""
+            key_lower = key.strip().lower()
+            replacements[key_lower] = val_str
+            # support spaces replaced by underscores and vice versa
+            replacements[key_lower.replace(" ", "_")] = val_str
+            replacements[key_lower.replace("_", " ")] = val_str
+            
+    # Regex to find all {{ ... }} matches and replace them
+    # Handles arbitrary whitespace inside braces, e.g. {{  first_name  }}
+    pattern = re.compile(r"\{\{\s*(.*?)\s*\}\}")
+    
+    def replace_match(match):
+        placeholder_key = match.group(1).strip().lower()
+        if placeholder_key in replacements:
+            return replacements[placeholder_key]
+        return match.group(0) # Keep unchanged if variable is unknown
+        
+    return pattern.sub(replace_match, text)
 
 async def resolve_mailbox_for_campaign(campaign: Campaign, db) -> Optional[EmailAccount]:
     """Resolves and returns the mailbox to use for sending, implementing smart multi-mailbox rotation."""
@@ -110,7 +135,7 @@ async def send_emails_job():
                 elapsed_seconds = (now_utc - last_sent).total_seconds()
                 
                 # Humanize intervals by randomizing target seconds between 75% and 200% of send_interval
-                base_seconds = campaign.send_interval * 60
+                base_seconds = campaign.send_interval
                 random_target_seconds = random.randint(int(base_seconds * 0.75), int(base_seconds * 2.0))
                 
                 if elapsed_seconds < random_target_seconds:

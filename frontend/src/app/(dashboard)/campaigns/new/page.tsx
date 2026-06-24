@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { auth, UserProfile } from "@/utils/auth";
 import { api } from "@/utils/api";
@@ -16,6 +16,7 @@ interface LeadItem {
   name: string;
   email: string;
   company: string;
+  custom_fields?: Record<string, any>;
 }
 
 interface SpamResult {
@@ -97,7 +98,36 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
   const [sendStartHour, setSendStartHour] = useState(9);
   const [sendEndHour, setSendEndHour] = useState(18);
   const [timezone, setTimezone] = useState("UTC");
-  const [sendInterval, setSendInterval] = useState(2);
+  const [sendInterval, setSendInterval] = useState(120);
+
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertVariable = (varName: string) => {
+    const textarea = bodyRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const snippet = `{{${varName}}}`;
+    const newVal = bodyTemplate.substring(0, start) + snippet + bodyTemplate.substring(end);
+    setBodyTemplate(newVal);
+    // Restore cursor after insertion
+    requestAnimationFrame(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + snippet.length;
+      textarea.focus();
+    });
+  };
+
+  const getAvailableCustomVariables = () => {
+    const keysSet = new Set<string>();
+    availableLeads.forEach(lead => {
+      if (lead.custom_fields && typeof lead.custom_fields === "object") {
+        Object.keys(lead.custom_fields).forEach(key => {
+          keysSet.add(key);
+        });
+      }
+    });
+    return Array.from(keysSet);
+  };
 
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
@@ -286,8 +316,8 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
     const totalLeads = selectedLeadIds.length;
     if (totalLeads === 0) return "0 minutes (No leads selected)";
     
-    const interval = Math.max(1, sendInterval);
-    const totalMinutes = totalLeads * interval;
+    const intervalInSeconds = Math.max(1, sendInterval);
+    const totalMinutes = (totalLeads * intervalInSeconds) / 60;
     
     const hoursPerDay = sendEndHour === sendStartHour
       ? 24
@@ -300,12 +330,18 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
     const days = Math.floor(totalMinutes / activeMinutesPerDay);
     const remainingActiveMinutes = totalMinutes % activeMinutesPerDay;
     const hours = Math.floor(remainingActiveMinutes / 60);
-    const minutes = remainingActiveMinutes % 60;
+    const minutes = Math.round(remainingActiveMinutes % 60);
     
     const parts = [];
     if (days > 0) parts.push(`${days} day${days > 1 ? "s" : ""}`);
     if (hours > 0) parts.push(`${hours} hour${hours > 1 ? "s" : ""}`);
     if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? "s" : ""}`);
+    if (parts.length === 0) {
+      const totalSeconds = Math.round(totalLeads * intervalInSeconds);
+      if (totalSeconds > 0) {
+        parts.push(`${totalSeconds} second${totalSeconds > 1 ? "s" : ""}`);
+      }
+    }
     
     return parts.join(", ");
   };
@@ -530,12 +566,47 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
                       required
                     />
                   </div>
-                  <div style={inputGroupStyle}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <label style={labelStyle}>Email Body</label>
-                      <span style={{ fontSize: "11px", color: "hsl(var(--text-muted))" }}>Variables: `{"{{name}}"}`, `{"{{company}}"}`, `{"{{website}}"}`</span>
+                               <div style={inputGroupStyle}>
+                    <label style={labelStyle}>Email Body</label>
+
+                    {/* Variables Chip Panel */}
+                    <div style={variablesPanelStyle}>
+                      <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-muted))", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.4rem", display: "block" }}>
+                        📌 Click to insert variable
+                      </span>
+                      <div style={chipRowCampaignStyle}>
+                        {["name", "first_name", "company", "website", "title"].map(v => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => insertVariable(v)}
+                            style={variableChipStyle}
+                            title={`Insert {{${v}}}`}
+                          >
+                            {`{{${v}}}`}
+                          </button>
+                        ))}
+                        {getAvailableCustomVariables().map(v => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => insertVariable(v)}
+                            style={customVariableChipStyle}
+                            title={`Insert {{${v}}} (custom field from CSV)`}
+                          >
+                            {`{{${v}}}`}
+                          </button>
+                        ))}
+                      </div>
+                      {getAvailableCustomVariables().length > 0 && (
+                        <span style={{ fontSize: "10px", color: "hsl(var(--accent))", marginTop: "0.25rem", display: "block" }}>
+                          ✨ Custom fields from your CSV are shown above in blue — click to insert
+                        </span>
+                      )}
                     </div>
-                    <textarea 
+
+                    <textarea
+                      ref={bodyRef}
                       placeholder="Hi {{name}}, I noticed your business {{company}}..." 
                       value={bodyTemplate}
                       onChange={(e) => setBodyTemplate(e.target.value)}
@@ -893,13 +964,13 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
                   </select>
                 </div>
                 <div style={inputGroupStyle}>
-                  <label style={labelStyle}>Send Interval (Minutes)</label>
+                  <label style={labelStyle}>Send Interval (Seconds)</label>
                   <input 
                     type="number" 
-                    min="1" 
-                    max="60" 
+                    min="5" 
+                    max="3600" 
                     value={sendInterval} 
-                    onChange={(e) => setSendInterval(Math.max(1, Number(e.target.value)))} 
+                    onChange={(e) => setSendInterval(Math.max(5, Number(e.target.value)))} 
                     className="input-field"
                     required
                   />
@@ -921,7 +992,7 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
                     <div style={calculatorMetricDividerStyle} />
                     <div style={calculatorMetricStyle}>
                       <span style={calculatorMetricLabelStyle}>Sending Interval</span>
-                      <span style={calculatorMetricValueStyle}>{sendInterval} Min</span>
+                      <span style={calculatorMetricValueStyle}>{sendInterval} Sec</span>
                     </div>
                     <div style={calculatorMetricDividerStyle} />
                     <div style={calculatorMetricStyle}>
@@ -1422,4 +1493,43 @@ const mailboxMultiSelectRowStyle: React.CSSProperties = {
   border: "1px solid transparent",
   transition: "all 0.15s ease",
 };
+
+const variablesPanelStyle: React.CSSProperties = {
+  backgroundColor: "hsl(var(--bg-secondary) / 50%)",
+  border: "1px solid hsl(var(--border-color))",
+  borderRadius: "10px",
+  padding: "0.75rem 1rem",
+  marginBottom: "0.5rem",
+};
+
+const chipRowCampaignStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.35rem",
+};
+
+const variableChipStyle: React.CSSProperties = {
+  padding: "0.2rem 0.55rem",
+  backgroundColor: "hsl(var(--bg-tertiary))",
+  border: "1px solid hsl(var(--border-color))",
+  borderRadius: "6px",
+  fontSize: "12px",
+  color: "hsl(var(--text-secondary))",
+  fontFamily: "monospace",
+  cursor: "pointer",
+  transition: "all 0.15s ease",
+};
+
+const customVariableChipStyle: React.CSSProperties = {
+  padding: "0.2rem 0.55rem",
+  backgroundColor: "hsl(var(--accent) / 12%)",
+  border: "1px solid hsl(var(--accent) / 35%)",
+  borderRadius: "6px",
+  fontSize: "12px",
+  color: "hsl(var(--accent))",
+  fontFamily: "monospace",
+  cursor: "pointer",
+  transition: "all 0.15s ease",
+};
+
 

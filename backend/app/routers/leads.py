@@ -465,6 +465,13 @@ async def upload_csv_leads(
     phone_key = find_header(phone_candidates)
     title_key = find_header(title_candidates)
     
+    standard_keys = {
+        k for k in [
+            email_key, first_name_key, last_name_key, name_key,
+            website_key, company_key, phone_key, title_key
+        ] if k is not None
+    }
+    
     parsed = 0
     skipped = 0
     inserted = 0
@@ -478,6 +485,24 @@ async def upload_csv_leads(
             
         parsed += 1
         
+        # Resolve name
+        name_val = ""
+        if name_key and row[name_key]:
+            name_val = row[name_key].strip()
+        elif first_name_key or last_name_key:
+            fname = row[first_name_key].strip() if (first_name_key and row[first_name_key]) else ""
+            lname = row[last_name_key].strip() if (last_name_key and row[last_name_key]) else ""
+            name_val = f"{fname} {lname}".strip()
+            
+        if not name_val:
+            name_val = email.split("@")[0].capitalize()
+
+        # Collect custom fields
+        custom_fields = {}
+        for key in (reader.fieldnames or []):
+            if key and key not in standard_keys:
+                custom_fields[key] = row[key].strip() if row[key] else ""
+                
         # Check database for duplicates per user and project
         dup_res = await db.execute(
             select(Lead).where(
@@ -491,6 +516,21 @@ async def upload_csv_leads(
         existing_lead = dup_res.scalars().first()
         
         if existing_lead:
+            # Update existing lead fields if missing
+            if name_val and not existing_lead.name:
+                existing_lead.name = name_val
+            if company_key and row[company_key] and not existing_lead.company:
+                existing_lead.company = row[company_key].strip()
+            if phone_key and row[phone_key] and not existing_lead.phone:
+                existing_lead.phone = row[phone_key].strip()
+            if website_key and row[website_key] and not existing_lead.website:
+                existing_lead.website = row[website_key].strip()
+            if title_key and row[title_key] and not existing_lead.title:
+                existing_lead.title = row[title_key].strip()
+            
+            # Always update custom fields
+            existing_lead.custom_fields = custom_fields
+
             # If lead already exists, we might still want to link it to the campaign
             # if they upload it explicitly for this campaign and it's not already linked
             if campaign:
@@ -522,18 +562,6 @@ async def upload_csv_leads(
                     existing_lead.campaign_name = campaign.name
             skipped += 1
             continue
-            
-        # Resolve name
-        name_val = ""
-        if name_key and row[name_key]:
-            name_val = row[name_key].strip()
-        elif first_name_key or last_name_key:
-            fname = row[first_name_key].strip() if (first_name_key and row[first_name_key]) else ""
-            lname = row[last_name_key].strip() if (last_name_key and row[last_name_key]) else ""
-            name_val = f"{fname} {lname}".strip()
-            
-        if not name_val:
-            name_val = email.split("@")[0].capitalize()
 
         # Create lead (CSV upload doesn't cost credits)
         db_lead = Lead(
@@ -546,7 +574,8 @@ async def upload_csv_leads(
             title=row[title_key].strip() if (title_key and row[title_key]) else None,
             source="csv_upload",
             campaign_name=target_project_name,
-            status="new"
+            status="new",
+            custom_fields=custom_fields
         )
         db.add(db_lead)
         await db.flush() # Flush to populate db_lead.id
@@ -599,6 +628,25 @@ async def upload_csv_leads(
         "verification_task_id": task_id
     }
 
+@router.get("/custom-keys")
+async def get_custom_field_keys(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return all unique custom_fields keys across the user's leads."""
+    stmt = select(Lead.custom_fields).where(
+        and_(Lead.user_id == current_user["id"], Lead.custom_fields != None)
+    )
+    res = await db.execute(stmt)
+    all_fields = res.scalars().all()
+    
+    keys_set = set()
+    for cf in all_fields:
+        if isinstance(cf, dict):
+            keys_set.update(cf.keys())
+    
+    return sorted(list(keys_set))
+
 @router.get("/projects")
 async def get_unique_projects(
     current_user: dict = Depends(get_current_user),
@@ -610,6 +658,7 @@ async def get_unique_projects(
     res = await db.execute(stmt)
     projects = [p for p in res.scalars().all() if p and p.strip()]
     return sorted(projects)
+
 
 @router.get("/")
 async def list_leads(

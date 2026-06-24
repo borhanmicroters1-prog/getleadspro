@@ -18,6 +18,7 @@ interface LeadItem {
   verification_status?: string;
   verification_error?: string;
   created_at: string;
+  custom_fields?: Record<string, any>;
 }
 
 export default function LeadsPage() {
@@ -47,7 +48,31 @@ export default function LeadsPage() {
   const [verificationTaskId, setVerificationTaskId] = useState<string | null>(null);
   const [verificationProgress, setVerificationProgress] = useState<{ progress: number; message: string } | null>(null);
 
+  // Custom columns from CSV uploads
+  const [customKeys, setCustomKeys] = useState<string[]>([]);
+
   // Clear selection on page/filter change
+  const getDynamicColumns = () => {
+    const columns: { key: string; label: string; isCustom?: boolean }[] = [
+      { key: "name", label: "Name" },
+      { key: "email", label: "Email" },
+      { key: "company", label: "Company" },
+      { key: "phone", label: "Phone" },
+      { key: "website", label: "Website" },
+    ];
+
+    if (leads.some(l => l.title)) {
+      columns.push({ key: "title", label: "Title" });
+    }
+
+    // Use server-fetched keys — covers ALL leads, not just the current page
+    customKeys.forEach(k => {
+      columns.push({ key: k, label: k, isCustom: true });
+    });
+
+    return columns;
+  };
+
   useEffect(() => {
     setSelectedIds([]);
   }, [page, searchQuery, sourceFilter, statusFilter, campaignFilter, verificationFilter]);
@@ -64,6 +89,11 @@ export default function LeadsPage() {
       api.get("/api/leads/projects")
         .then((data) => setProjects(data || []))
         .catch((err) => console.error("Error fetching projects:", err));
+
+      // Fetch all custom field keys from user's leads (server-side, not pagination-limited)
+      api.get("/api/leads/custom-keys")
+        .then((data: string[]) => setCustomKeys(data || []))
+        .catch((err) => console.error("Error fetching custom keys:", err));
     }
   }, [router]);
 
@@ -80,10 +110,16 @@ export default function LeadsPage() {
       });
       setLeads(data.leads || []);
       setTotal(data.total || 0);
+
+      // Also refresh custom column keys (covers all leads, not just current page)
+      api.get("/api/leads/custom-keys")
+        .then((keys: string[]) => setCustomKeys(keys || []))
+        .catch(() => {});
     } catch (err: any) {
       console.error("Error fetching leads:", err);
     }
   };
+
 
   const handleBulkVerify = async () => {
     if (selectedIds.length === 0) return;
@@ -249,6 +285,7 @@ export default function LeadsPage() {
   };
 
   const totalPages = Math.ceil(total / limit) || 1;
+  const dynamicCols = getDynamicColumns();
 
   if (loading || !user) {
     return (
@@ -438,11 +475,9 @@ export default function LeadsPage() {
                         style={{ cursor: "pointer", width: "16px", height: "16px" }}
                       />
                     </th>
-                    <th style={thStyle}>Name</th>
-                    <th style={thStyle}>Email</th>
-                    <th style={thStyle}>Company</th>
-                    <th style={thStyle}>Phone</th>
-                    <th style={thStyle}>Website</th>
+                    {dynamicCols.map((col) => (
+                      <th key={col.key} style={thStyle}>{col.label}</th>
+                    ))}
                     <th style={thStyle}>Source</th>
                     <th style={thStyle}>Verification</th>
                     <th style={thStyle}>Status</th>
@@ -467,35 +502,70 @@ export default function LeadsPage() {
                             style={{ cursor: "pointer", width: "16px", height: "16px" }}
                           />
                         </td>
-                        <td style={{ ...tdStyle, color: "hsl(var(--text-primary))", fontWeight: 500 }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                            <span>{l.name || "-"}</span>
-                            {l.title && (
-                              <span style={{ 
-                                fontSize: "11px", 
-                                color: "hsl(var(--text-muted))", 
-                                display: "inline-flex", 
-                                alignItems: "center", 
-                                gap: "0.25rem",
-                                fontWeight: 400
-                              }}>
-                                💼 {l.title}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={tdStyle}>{l.email}</td>
-                        <td style={tdStyle}>{l.company || "-"}</td>
-                        <td style={tdStyle}>{l.phone || "-"}</td>
-                        <td style={tdStyle}>
-                          {l.website ? (
-                            <a href={l.website} target="_blank" rel="noopener noreferrer" style={{ color: "hsl(var(--accent))" }}>
-                              {l.website.replace("https://", "").replace("http://", "")}
-                            </a>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
+                        {dynamicCols.map((col) => {
+                          if (col.isCustom) {
+                            const val = l.custom_fields?.[col.key];
+                            return (
+                              <td key={col.key} style={tdStyle}>
+                                {val !== undefined && val !== null ? String(val) : "-"}
+                              </td>
+                            );
+                          }
+                          
+                          if (col.key === "name") {
+                            return (
+                              <td key="name" style={{ ...tdStyle, color: "hsl(var(--text-primary))", fontWeight: 500 }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                                  <span>{l.name || "-"}</span>
+                                  {l.title && (
+                                    <span style={{ 
+                                      fontSize: "11px", 
+                                      color: "hsl(var(--text-muted))", 
+                                      display: "inline-flex", 
+                                      alignItems: "center", 
+                                      gap: "0.25rem",
+                                      fontWeight: 400
+                                    }}>
+                                      💼 {l.title}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          }
+                          
+                          if (col.key === "email") {
+                            return <td key="email" style={tdStyle}>{l.email}</td>;
+                          }
+                          
+                          if (col.key === "company") {
+                            return <td key="company" style={tdStyle}>{l.company || "-"}</td>;
+                          }
+                          
+                          if (col.key === "phone") {
+                            return <td key="phone" style={tdStyle}>{l.phone || "-"}</td>;
+                          }
+                          
+                          if (col.key === "website") {
+                            return (
+                              <td key="website" style={tdStyle}>
+                                {l.website ? (
+                                  <a href={l.website} target="_blank" rel="noopener noreferrer" style={{ color: "hsl(var(--accent))" }}>
+                                    {l.website.replace("https://", "").replace("http://", "")}
+                                  </a>
+                                ) : (
+                                  "-"
+                                )}
+                              </td>
+                            );
+                          }
+                          
+                          if (col.key === "title") {
+                            return <td key="title" style={tdStyle}>{l.title || "-"}</td>;
+                          }
+                          
+                          return <td key={col.key} style={tdStyle}>-</td>;
+                        })}
                         <td style={tdStyle}>
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
                             <span className={`badge ${getSourceBadgeClass(l.source)}`} style={{ fontSize: "10px" }}>
@@ -532,7 +602,7 @@ export default function LeadsPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={10} style={noDataTdStyle}>
+                      <td colSpan={dynamicCols.length + 5} style={noDataTdStyle}>
                         No leads found. Scrape some leads or upload a CSV to get started!
                       </td>
                     </tr>

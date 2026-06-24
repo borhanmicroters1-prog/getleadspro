@@ -37,6 +37,7 @@ async def verify_email_dns_and_smtp(email: str, sender: str = "verify@getleads.c
     Verifies an email address using DNS MX lookup and SMTP handshake.
     Returns (status, error_message).
     Statuses: 'valid', 'invalid', 'catch_all', 'unknown', 'disposable'
+    Tries ports: 25, 587, 465 (SSL) in order to bypass port blocks.
     """
     email = email.strip()
     if not email:
@@ -61,7 +62,7 @@ async def verify_email_dns_and_smtp(email: str, sender: str = "verify@getleads.c
         for rdata in sorted_answers:
             mx_hosts.append(str(rdata.exchange).rstrip('.'))
     except Exception as e:
-        # Check A record as fallback (some mail domains host on primary A record)
+        # Check A record as fallback
         try:
             dns.resolver.resolve(domain, 'A')
             mx_hosts.append(domain)
@@ -71,47 +72,69 @@ async def verify_email_dns_and_smtp(email: str, sender: str = "verify@getleads.c
     if not mx_hosts:
         return "invalid", "No mail servers found for domain"
 
-    # 2. SMTP Handshake check (best effort)
     mx_host = mx_hosts[0]
     
-    try:
-        # Connect to the MX server
-        server = smtplib.SMTP(timeout=4)
-        server.connect(mx_host, 25)
-        
-        # Helo and Sender
-        server.helo(socket.gethostname())
-        server.mail(sender)
-        
-        # Check catch-all first using a random non-existent mailbox
-        random_mailbox = generate_random_mailbox(domain)
-        code_catch, _ = server.rcpt(random_mailbox)
-        
-        is_catch_all = (code_catch == 250)
-        
-        # Check the actual email recipient
-        code, message = server.rcpt(email)
-        server.quit()
-        
-        # Decode error message
-        decoded_msg = message.decode(errors='ignore') if isinstance(message, bytes) else str(message)
-        
-        if is_catch_all:
-            return "catch_all", "Domain is catch-all (accepts all addresses)"
+    # 2. Try SMTP on multiple ports: 25, 587, 465 (SSL)
+    # Port 25 is often blocked by ISPs/cloud providers
+    PORTS_TO_TRY = [
+        (25,  False),   # Standard SMTP
+        (587, False),   # SMTP with STARTTLS (most common fallback)
+        (465, True),    # SMTP over SSL
+    ]
+    
+    last_error = None
+    
+    for port, use_ssl in PORTS_TO_TRY:
+        try:
+            if use_ssl:
+                import ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                server = smtplib.SMTP_SSL(mx_host, port, timeout=8, context=ctx)
+            else:
+                server = smtplib.SMTP(timeout=8)
+                server.connect(mx_host, port)
+                # Attempt STARTTLS on port 587 (optional, don't fail if not available)
+                if port == 587:
+                    try:
+                        server.starttls()
+                    except Exception:
+                        pass
+
+            # HELO and FROM
+            server.helo(socket.gethostname())
+            server.mail(sender)
             
-        if code == 250:
-            return "valid", None
-        elif code in (251, 252):
-            return "valid", f"Forwarded/accepted: {code} {decoded_msg}"
-        elif code >= 500:
-            return "invalid", f"Mailbox unavailable ({code}): {decoded_msg}"
-        else:
-            return "unknown", f"Unexpected code {code}: {decoded_msg}"
+            # Catch-all check
+            random_mailbox = generate_random_mailbox(domain)
+            code_catch, _ = server.rcpt(random_mailbox)
+            is_catch_all = (code_catch == 250)
             
-    except (socket.timeout, socket.error) as se:
-        # Connection failed or timed out. Usually because outbound Port 25 is blocked.
-        # Since MX/A records exist, we mark as 'unknown' rather than 'invalid'
-        # so the user knows we couldn't ping the mailbox, but it might still be valid.
-        return "unknown", f"SMTP connection failed (Port 25 block or server timeout): {str(se)}"
-    except Exception as e:
-        return "unknown", f"Verification error: {str(e)}"
+            # Actual email check
+            code, message = server.rcpt(email)
+            server.quit()
+            
+            decoded_msg = message.decode(errors='ignore') if isinstance(message, bytes) else str(message)
+            
+            if is_catch_all:
+                return "catch_all", "Domain is catch-all (accepts all addresses)"
+            if code == 250:
+                return "valid", None
+            elif code in (251, 252):
+                return "valid", f"Forwarded/accepted: {code} {decoded_msg}"
+            elif code >= 500:
+                return "invalid", f"Mailbox unavailable ({code}): {decoded_msg}"
+            else:
+                return "unknown", f"Unexpected code {code}: {decoded_msg}"
+                
+        except (socket.timeout, socket.error, ConnectionRefusedError, OSError) as se:
+            last_error = str(se)
+            continue  # Try next port
+        except Exception as e:
+            last_error = str(e)
+            continue  # Try next port
+    
+    # All ports failed — MX records exist but no SMTP connection possible
+    return "unknown", f"SMTP unreachable on ports 25/587/465: {last_error}"
+
