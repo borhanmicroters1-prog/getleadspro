@@ -1,6 +1,7 @@
 import json
 import re
 import httpx
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -146,6 +147,8 @@ async def generate_email(
       provider_lower = "chatgpt"
   elif "gemini" in model_selected:
       provider_lower = "gemini"
+  elif "deepseek" in model_selected:
+      provider_lower = "deepseek"
 
   # Resolve system API keys dynamically
   voidai_api_key = await get_system_setting(db, "VOIDAI_API_KEY")
@@ -175,6 +178,9 @@ async def generate_email(
   elif provider_lower == "chatgpt":
       voidai_model = "gpt-4o" if ("gpt-4o" in model_selected and "mini" not in model_selected) else "gpt-4o-mini"
       direct_model = "gpt-4o" if ("gpt-4o" in model_selected and "mini" not in model_selected) else "gpt-4o-mini"
+  elif provider_lower == "deepseek":
+      voidai_model = "deepseek-r1" if "r1" in model_selected else "deepseek-v3"
+      direct_model = "deepseek-r1" if "r1" in model_selected else "deepseek-v3"
 
   # Auto-switch to available system API key if the selected provider key is not configured
   if not voidai_key:
@@ -205,6 +211,19 @@ async def generate_email(
         provider_lower = "chatgpt"
         voidai_model = "gpt-4o-mini"
         direct_model = "gpt-4o-mini"
+    elif provider_lower == "deepseek":
+      if openai_api_key:
+        provider_lower = "chatgpt"
+        voidai_model = "gpt-4o-mini"
+        direct_model = "gpt-4o-mini"
+      elif gemini_api_key:
+        provider_lower = "gemini"
+        voidai_model = "gemini-3.5-flash"
+        direct_model = "gemini-1.5-flash"
+      elif anthropic_api_key:
+        provider_lower = "claude"
+        voidai_model = "claude-sonnet-4-6"
+        direct_model = "claude-3-5-sonnet-20241022"
 
   # 1. Fallback Mock Checks
   use_mock = False
@@ -214,6 +233,8 @@ async def generate_email(
     elif provider_lower == "chatgpt" and not openai_api_key:
       use_mock = True
     elif provider_lower == "gemini" and not gemini_api_key:
+      use_mock = True
+    elif provider_lower == "deepseek":
       use_mock = True
 
   if use_mock:
@@ -272,6 +293,7 @@ async def generate_email(
               payload["model"] = voidai_model
               res = await client.post("https://api.voidai.app/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
           except Exception as parse_err:
+            traceback.print_exc()
             print(f"Error parsing error response for fallback: {parse_err}")
 
         if res.status_code != 200:
@@ -369,6 +391,7 @@ async def generate_email(
       return parsed
 
     except Exception as e:
+      traceback.print_exc()
       print(f"AI generation request failed: {e}")
       # Fallback to mock on connection/API failures
       return generate_mock_email(lead_name, company_name, rating, f"{provider_lower} (failed-API-fallback)")

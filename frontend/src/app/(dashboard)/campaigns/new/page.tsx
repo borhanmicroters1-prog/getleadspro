@@ -587,6 +587,8 @@ Do NOT output any markdown tags, notes, explanations, or backticks. Return ONLY 
                       <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                       <option value="gpt-4o">GPT-4o</option>
                       <option value="gemini-pro">Gemini Pro</option>
+                      <option value="deepseek-v3">DeepSeek V3</option>
+                      <option value="deepseek-r1">DeepSeek R1 (Reasoning)</option>
                     </select>
                   </div>
 
